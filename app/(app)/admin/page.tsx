@@ -78,6 +78,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     <>
       <h1>Gestión</h1>
 
+      <div className="cols">
+        <div className="col">
       <h2>Correcciones pendientes</h2>
       {pending.length === 0 && <div className="card"><div className="muted">No hay ninguna.</div></div>}
       {pending.map((c) => (
@@ -189,6 +191,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       </div>
       <a className="btn soft" href={`/admin/export?m=${month}`}>Descargar registro de la nómina de {monthOnly(month)} (Excel)</a>
 
+        </div>
+        <div className="col">
       <h2>Día de corte de la nómina</h2>
       <form action={setPayStartDay} className="card" style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
         <label style={{ flex: 1 }}>La nómina empieza el día
@@ -229,6 +233,8 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       <div className="card">
         <div className="big" style={{ fontSize: 26, letterSpacing: '.08em' }}>{code?.join_code}</div>
         <div className="muted small">Pásaselo a quien entre nuevo para que se registre como trabajador.</div>
+      </div>
+        </div>
       </div>
     </>
   );

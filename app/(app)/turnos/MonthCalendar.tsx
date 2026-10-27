@@ -35,9 +35,9 @@ export function MonthCalendar({ month, day, shifts, people }: {
   const today = ymd();
 
   const Dots = ({ ids }: { ids: string[] }) => (
-    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', alignContent: 'center', minHeight: 18, padding: '2px 1px' }}>
+    <span className="cal-half" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', alignContent: 'center', padding: '2px 1px' }}>
       {sort(ids).map((id) => (
-        <span key={id} title={name.get(id)} style={{ width: 7, height: 7, borderRadius: 99, background: color.get(id) ?? '#999' }} />
+        <span key={id} title={name.get(id)} className="cal-dot" style={{ background: color.get(id) ?? '#999' }} />
       ))}
     </span>
   );
@@ -69,8 +69,8 @@ export function MonthCalendar({ month, day, shifts, people }: {
                 opacity: inMonth ? 1 : 0.4, background: '#fff',
               }}
             >
-              <span style={{
-                fontSize: 11, fontWeight: 700, textAlign: 'center', lineHeight: '16px',
+              <span className="cal-num" style={{
+                fontWeight: 700, textAlign: 'center',
                 background: sel ? 'var(--espresso)' : 'transparent', color: sel ? '#F7EFE4' : 'var(--tinta)',
               }}>{Number(c.slice(8))}</span>
               <Dots ids={v?.am ?? []} />

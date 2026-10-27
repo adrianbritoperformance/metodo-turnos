@@ -76,8 +76,47 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
     <>
       <h1>Cuadrante</h1>
 
+      <div className="cols">
+        <div className="col sticky">
       <MonthCalendar month={month} day={day} shifts={shifts} people={calPeople} />
 
+      {/* ---- Semana ---- */}
+      <h2>Semana {fmtWeek(mon)}</h2>
+      <form action={copyWeek} className="card">
+        <input type="hidden" name="from" value={addDays(mon, -7)} />
+        <input type="hidden" name="to" value={mon} />
+        <div className="small muted">Copia los turnos de la semana {fmtWeek(addDays(mon, -7))} a esta. Lo que ya esté puesto no se duplica.</div>
+        <button className="btn soft">Copiar semana anterior</button>
+      </form>
+      <ClearWeekForm monday={mon} label={fmtWeek(mon)} />
+
+      {people.length > 0 && (
+        <details className="card">
+          <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="eyebrow">Horas puestas esta semana</span>
+            <span className="small" style={{ textDecoration: 'underline', color: 'var(--suave)' }}>Ver</span>
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 8 }}>
+            {people.map((p) => {
+              const plan = planned.get(p.user_id) ?? 0;
+              const contract = Number(p.weekly_hours) * 60;
+              const diff = plan - contract;
+              const cls = diff === 0 ? 'ok' : diff > 0 ? 'out' : 'low';
+              return (
+                <div key={p.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--linea)' }}>
+                  <span style={{ fontWeight: 700 }}>{p.full_name}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className="small">{fmtHours(plan)} / {fmtHours(contract)}</span>
+                    <span className={`pill ${cls}`}>{diff === 0 ? 'Justo' : diff > 0 ? `+${fmtHours(diff)}` : `−${fmtHours(diff)}`}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+        </div>
+        <div className="col">
       {/* ---- Día elegido: Mañana / Tarde por compañera ---- */}
       <h2>{fmtLongDay(madridMidnight(day))}</h2>
       {templates.length > 0 && <div className="small muted">{templates.map((t) => `${t.name} ${tplTimes(t)}`).join(' · ')}</div>}
@@ -153,41 +192,8 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
         </div>
       </details>
 
-      {/* ---- Semana ---- */}
-      <h2>Semana {fmtWeek(mon)}</h2>
-      <form action={copyWeek} className="card">
-        <input type="hidden" name="from" value={addDays(mon, -7)} />
-        <input type="hidden" name="to" value={mon} />
-        <div className="small muted">Copia los turnos de la semana {fmtWeek(addDays(mon, -7))} a esta. Lo que ya esté puesto no se duplica.</div>
-        <button className="btn soft">Copiar semana anterior</button>
-      </form>
-      <ClearWeekForm monday={mon} label={fmtWeek(mon)} />
-
-      {people.length > 0 && (
-        <details className="card">
-          <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="eyebrow">Horas puestas esta semana</span>
-            <span className="small" style={{ textDecoration: 'underline', color: 'var(--suave)' }}>Ver</span>
-          </summary>
-          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 8 }}>
-            {people.map((p) => {
-              const plan = planned.get(p.user_id) ?? 0;
-              const contract = Number(p.weekly_hours) * 60;
-              const diff = plan - contract;
-              const cls = diff === 0 ? 'ok' : diff > 0 ? 'out' : 'low';
-              return (
-                <div key={p.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--linea)' }}>
-                  <span style={{ fontWeight: 700 }}>{p.full_name}</span>
-                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span className="small">{fmtHours(plan)} / {fmtHours(contract)}</span>
-                    <span className={`pill ${cls}`}>{diff === 0 ? 'Justo' : diff > 0 ? `+${fmtHours(diff)}` : `−${fmtHours(diff)}`}</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
+        </div>
+      </div>
     </>
   );
 }
