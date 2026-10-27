@@ -7,6 +7,9 @@ import {
 import { ShiftForm } from '../Forms';
 import { copyWeek, deleteShift } from '../actions';
 import { TemplateToggle } from './Toggle';
+import { MonthCalendar, type CalPerson } from './MonthCalendar';
+import { ClearWeekForm } from '../Forms';
+import { colorOf } from '@/lib/colors';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +17,10 @@ type Row = {
   id: string; user_id: string; starts_at: string; ends_at: string; label: string | null; note: string | null;
   changed_at: string | null; template_id: string | null; profiles: { full_name: string } | null;
 };
-type Tpl = { id: string; name: string; start_time: string; end_time: string };
+type Tpl = { id: string; name: string; start_time: string; end_time: string; weekdays: number[] };
+
+/** 1 = lunes … 7 = domingo */
+const isoDow = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return ((new Date(Date.UTC(y, m - 1, dd)).getUTCDay() + 6) % 7) + 1; };
 
 const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -38,36 +44,24 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
   const weekFrom = madridMidnight(mon).toISOString();
   const weekTo = madridMidnight(addDays(mon, 7)).toISOString();
 
-  const [{ data: monthShifts }, { data: tpls }, { data: contracts }, { data: weekShifts }] = await Promise.all([
+  const [{ data: monthShifts }, { data: tpls }, { data: contracts }, { data: weekShifts }, { data: profs }] = await Promise.all([
     sb.from('shifts').select('id, user_id, starts_at, ends_at, label, note, changed_at, template_id, profiles(full_name)')
       .gte('starts_at', mFrom).lt('starts_at', mTo).order('starts_at'),
-    sb.from('shift_templates').select('id, name, start_time, end_time').order('sort'),
+    sb.from('shift_templates').select('id, name, start_time, end_time, weekdays').order('sort'),
     sb.rpc('get_contracts'),
     sb.from('shift_balance').select('user_id, planned_minutes').gte('starts_at', weekFrom).lt('starts_at', weekTo),
+    sb.from('profiles').select('id, full_name, color, active').order('full_name'),
   ]);
+  const calPeople = calendarPeople(profs);
+  const colorById = new Map(calPeople.map((p) => [p.id, p.color]));
   const shifts = (monthShifts ?? []) as unknown as Row[];
-  const templates = (tpls ?? []) as Tpl[];
+  const allTemplates = (tpls ?? []) as Tpl[];
+  const templates = allTemplates.filter((t) => t.weekdays.includes(isoDow(day)));
+  const tplName = new Map(allTemplates.map((t) => [t.id, t.name]));
+  const names = [...new Set(allTemplates.map((t) => t.name))];
   const people = ((contracts ?? []) as { user_id: string; full_name: string; weekly_hours: number; active: boolean }[])
     .filter((c) => c.active);
   const team = people.map((p) => ({ id: p.user_id, full_name: p.full_name }));
-
-  // Recuento por día para el calendario: { 'YYYY-MM-DD': { tplId: n, other: n } }
-  const perDay = new Map<string, Map<string, number>>();
-  for (const s of shifts) {
-    const k = ymd(s.starts_at);
-    const m = perDay.get(k) ?? new Map<string, number>();
-    const key = s.template_id ?? 'other';
-    m.set(key, (m.get(key) ?? 0) + 1);
-    perDay.set(k, m);
-  }
-
-  // Celdas del mes empezando en lunes
-  const first = `${month}-01`;
-  const gridStart = mondayOf(first);
-  const nextMonthFirst = `${shiftMonth(month, 1)}-01`;
-  const cells: string[] = [];
-  for (let c = gridStart; c < nextMonthFirst || cells.length % 7 !== 0; c = addDays(c, 1)) cells.push(c);
-  const today = ymd();
 
   const dayShifts = shifts.filter((s) => ymd(s.starts_at) === day);
   // Si el día elegido no es de este mes (no debería pasar) no hay turnos cargados
@@ -82,58 +76,25 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
     <>
       <h1>Cuadrante</h1>
 
-      {/* ---- Calendario del mes ---- */}
-      <div className="card" style={{ gap: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Link className="btn ghost sm" href={`/turnos?d=${shiftMonth(month, -1)}-01`} aria-label="Mes anterior" style={{ padding: '0 12px' }}>‹</Link>
-          <div style={{ fontWeight: 700 }}>{monthName(month)}</div>
-          <Link className="btn ghost sm" href={`/turnos?d=${shiftMonth(month, 1)}-01`} aria-label="Mes siguiente" style={{ padding: '0 12px' }}>›</Link>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
-          {WD.map((w) => <div key={w} className="small" style={{ textAlign: 'center', color: 'var(--suave)', fontWeight: 700 }}>{w}</div>)}
-          {cells.map((c) => {
-            const inMonth = c.slice(0, 7) === month;
-            const counts = perDay.get(c);
-            const sel = c === day;
-            return (
-              <Link
-                key={c}
-                href={`/turnos?d=${c}`}
-                aria-current={sel ? 'date' : undefined}
-                aria-label={`${Number(c.slice(8))}${counts ? `: ${[...counts.values()].reduce((a, b) => a + b, 0)} turnos` : ''}`}
-                style={{
-                  minHeight: 50, borderRadius: 10, textDecoration: 'none', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', gap: 2,
-                  background: sel ? 'var(--espresso)' : inMonth ? '#fff' : 'transparent',
-                  color: sel ? '#F7EFE4' : inMonth ? 'var(--tinta)' : '#A8917D',
-                  border: c === today && !sel ? '2px solid var(--espresso)' : '2px solid transparent',
-                }}
-              >
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{Number(c.slice(8))}</span>
-                {counts && inMonth && (
-                  <span style={{ fontSize: 10, lineHeight: 1 }}>
-                    {templates.map((t) => counts.get(t.id) ? `${t.name[0]}${counts.get(t.id)}` : null).filter(Boolean).join(' ')}
-                    {counts.get('other') ? ` +${counts.get('other')}` : ''}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-        <div className="small muted">{templates.map((t) => `${t.name[0]} = ${t.name} (${tplTimes(t)})`).join(' · ')}</div>
-      </div>
+      <MonthCalendar month={month} day={day} shifts={shifts} people={calPeople} />
 
       {/* ---- Día elegido: Mañana / Tarde por compañera ---- */}
       <h2>{fmtLongDay(madridMidnight(day))}</h2>
+      {templates.length > 0 && <div className="small muted">{templates.map((t) => `${t.name} ${tplTimes(t)}`).join(' · ')}</div>}
+      {templates.length === 0 && <div className="card"><div className="muted">Este día no hay turnos tipo. Si hace falta, usa “Turno con otro horario”.</div></div>}
       {people.length === 0 && <div className="card"><div className="muted">Aún no hay nadie en el equipo.</div></div>}
       <div className="list">
         {people.map((p) => {
           const mine = dayShifts.filter((s) => s.user_id === p.user_id);
           const extra = mine.filter((s) => !s.template_id || !templates.some((t) => t.id === s.template_id));
+          if (templates.length === 0 && mine.length === 0) return null;
           return (
             <div key={p.user_id} className="row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span className="t">{p.full_name}{p.user_id === me ? ' (tú)' : ''}</span>
+                <span className="t" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 99, background: colorById.get(p.user_id) }} />
+                  {p.full_name}{p.user_id === me ? ' (tú)' : ''}
+                </span>
                 {extra.length > 0 && <span className="small muted">+ {extra.map((s) => `${fmtTime(s.starts_at)}–${fmtTime(s.ends_at)}`).join(', ')}</span>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -161,7 +122,7 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
           <summary className="btn ghost">Cambiar horas o poner una tarea</summary>
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {dayShifts.map((r) => {
-              const tpl = templates.find((t) => t.id === r.template_id);
+              const tpl = allTemplates.find((t) => t.id === r.template_id);
               return (
                 <details key={r.id} className="card" style={{ background: 'var(--crema)' }}>
                   <summary style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
@@ -200,6 +161,7 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
         <div className="small muted">Copia los turnos de la semana {fmtWeek(addDays(mon, -7))} a esta. Lo que ya esté puesto no se duplica.</div>
         <button className="btn soft">Copiar semana anterior</button>
       </form>
+      <ClearWeekForm monday={mon} label={fmtWeek(mon)} />
 
       {people.length > 0 && (
         <details className="card">
@@ -233,13 +195,18 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
 /* ======================= Trabajadoras: ver el cuadrante ======================= */
 
 async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) {
-  const { from, to } = dayRange(day);
-  const mon = mondayOf(day);
-  const week = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
-  const { data } = await sb.from('shifts')
-    .select('id, user_id, starts_at, ends_at, label, note, changed_at, template_id, profiles(full_name)')
-    .gte('starts_at', from).lt('starts_at', to).order('starts_at');
-  const rows = (data ?? []) as unknown as Row[];
+  const month = day.slice(0, 7);
+  const { from: mFrom, to: mTo } = monthRange(month);
+  const [{ data }, { data: profs }] = await Promise.all([
+    sb.from('shifts')
+      .select('id, user_id, starts_at, ends_at, label, note, changed_at, template_id, profiles(full_name)')
+      .gte('starts_at', mFrom).lt('starts_at', mTo).order('starts_at'),
+    sb.from('profiles').select('id, full_name, color, active').order('full_name'),
+  ]);
+  const all = (data ?? []) as unknown as Row[];
+  const calPeople = calendarPeople(profs);
+  const colorById = new Map(calPeople.map((p) => [p.id, p.color]));
+  const rows = all.filter((r) => ymd(r.starts_at) === day);
 
   return (
     <>
@@ -248,17 +215,7 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
         <Link className="btn ghost sm" href="/turnos">Hoy</Link>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <Link className="btn ghost sm" href={`/turnos?d=${addDays(mon, -7)}`} aria-label="Semana anterior" style={{ padding: '0 10px' }}>‹</Link>
-        <div className="days" style={{ flex: 1 }}>
-          {week.map((w, i) => (
-            <Link key={w} href={`/turnos?d=${w}`} className={w === day ? 'on' : ''} aria-current={w === day ? 'date' : undefined}>
-              <span>{WD[i]}</span><span>{Number(w.slice(8))}</span>
-            </Link>
-          ))}
-        </div>
-        <Link className="btn ghost sm" href={`/turnos?d=${addDays(mon, 7)}`} aria-label="Semana siguiente" style={{ padding: '0 10px' }}>›</Link>
-      </div>
+      <MonthCalendar month={month} day={day} shifts={all} people={calPeople} />
 
       <h2>{fmtLongDay(madridMidnight(day))}</h2>
       {rows.length === 0 && <div className="card"><div className="muted">No hay turnos este día.</div></div>}
@@ -268,7 +225,10 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
         return (
           <div key={r.id} className={`card ${mine ? 'yellow' : ''}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{r.profiles?.full_name ?? '—'}{mine ? ' (tú)' : ''}</div>
+              <div style={{ fontWeight: 700, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 99, background: colorById.get(r.user_id) }} />
+                {r.profiles?.full_name ?? '—'}{mine ? ' (tú)' : ''}
+              </div>
               <div style={{ fontFamily: 'var(--titulo)', fontWeight: 700 }}>{fmtTime(r.starts_at)}–{fmtTime(r.ends_at)}</div>
             </div>
             {r.label && <div className="muted">{r.label}</div>}
@@ -279,4 +239,10 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
       })}
     </>
   );
+}
+
+function calendarPeople(profs: unknown): CalPerson[] {
+  return ((profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean }[])
+    .filter((p) => p.active)
+    .map((p, i) => ({ id: p.id, name: p.full_name.split(' ')[0], color: colorOf(p.color, i) }));
 }

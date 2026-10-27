@@ -1,7 +1,6 @@
 import { requireProfile } from '@/lib/supabase';
 import { fmtLongDay } from '@/lib/time';
 import { Nav } from './Nav';
-import { logout } from '../login/actions';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile } = await requireProfile();
@@ -11,11 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <img src="/logo.png" alt="Método Café" />
         <div className="meta">
           <div>{fmtLongDay(new Date())}</div>
-          <form action={logout}>
-            <button className="small" style={{ background: 'none', border: 0, padding: '6px 0', color: 'var(--suave)', textDecoration: 'underline', cursor: 'pointer' }}>
-              Salir
-            </button>
-          </form>
+          <a href="/perfil" style={{ display: 'inline-block', padding: '6px 0', color: 'var(--suave)', fontSize: 13 }}>Mi perfil</a>
         </div>
       </header>
       <main className="main">{children}</main>

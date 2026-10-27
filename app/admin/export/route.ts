@@ -1,53 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
-import { fmtTime, monthRange, ymd } from '@/lib/time';
+import { payrollCsv } from '@/lib/export';
+import { getPayStartDay } from '@/lib/period';
+import { payMonthOf, ymd } from '@/lib/time';
 
-/**
- * Registro de jornada del mes en CSV (se abre en Excel).
- * Una fila por turno: previsto, entrada y salida reales y minutos de exceso a la salida.
- */
+/** Registro de jornada de todo el equipo (solo encargada). */
 export async function GET(req: NextRequest) {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return NextResponse.redirect(new URL('/login', req.url));
   const { data: me } = await sb.from('profiles').select('role').eq('id', user.id).single();
   if (me?.role !== 'owner') return new NextResponse('Solo la encargada', { status: 403 });
-
-  const m = req.nextUrl.searchParams.get('m') ?? ymd().slice(0, 7);
+  const m = req.nextUrl.searchParams.get('m') ?? payMonthOf(ymd(), await getPayStartDay(sb));
   if (!/^\d{4}-\d{2}$/.test(m)) return new NextResponse('Mes no válido', { status: 400 });
-  const { from, to } = monthRange(m);
-
-  const next = `${Number(m.slice(5)) === 12 ? Number(m.slice(0, 4)) + 1 : m.slice(0, 4)}-${String(Number(m.slice(5)) % 12 + 1).padStart(2, '0')}`;
-  const [{ data: rows }, { data: people }, { data: weeks }] = await Promise.all([
-    sb.from('shift_balance').select('*').gte('starts_at', from).lt('starts_at', to).order('starts_at'),
-    sb.from('profiles').select('id, full_name'),
-    sb.from('week_balance').select('*').gte('week_start', `${m}-01`).lt('week_start', `${next}-01`).order('week_start'),
-  ]);
-  const hm = (min: number) => `${min < 0 ? '-' : ''}${Math.floor(Math.abs(min) / 60)}:${String(Math.abs(min) % 60).padStart(2, '0')}`;
-  const name = new Map((people ?? []).map((p) => [p.id, p.full_name]));
-  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-
-  const lines = [
-    ['REGISTRO DE JORNADA'],
-    ['Trabajador', 'Fecha', 'Puesto', 'Inicio previsto', 'Fin previsto', 'Entrada real', 'Salida real', 'Duración prevista', 'Minutos extra (salida)', 'Corrección pendiente'],
-    ...(rows ?? []).map((r) => [
-      name.get(r.user_id) ?? '', ymd(r.starts_at), r.label ?? '',
-      fmtTime(r.starts_at), fmtTime(r.ends_at), fmtTime(r.real_in), fmtTime(r.real_out),
-      hm(r.planned_minutes ?? 0), r.extra_minutes ?? '', r.has_pending_correction ? 'Sí' : '',
-    ]),
-    [],
-    ['SALDO SEMANAL FRENTE A CONTRATO'],
-    ['Trabajador', 'Semana (lunes)', 'Horas hechas', 'Horas contrato', 'Saldo', 'Semana cerrada'],
-    ...(weeks ?? []).map((w) => [
-      name.get(w.user_id) ?? '', w.week_start, hm(w.worked_minutes), hm(w.contract_minutes), hm(w.balance_minutes), w.closed ? 'Sí' : 'No',
-    ]),
-  ];
-  // BOM + punto y coma para que Excel en español lo abra bien
-  const csv = '﻿' + lines.map((l) => l.map(esc).join(';')).join('\r\n');
-  return new NextResponse(csv, {
-    headers: {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="registro-jornada-${m}.csv"`,
-    },
-  });
+  return payrollCsv(sb, m);
 }

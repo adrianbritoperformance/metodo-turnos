@@ -2,10 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireOwner, requireProfile } from '@/lib/supabase';
-import { fmtTime } from '@/lib/time';
+import { fmtTime, parseHours } from '@/lib/time';
 
 export type FicharResult =
-  | { ok: true; kind: 'in' | 'out'; at: string; shiftEnd: string | null; extra: number | null }
+  | { ok: true; id: string; kind: 'in' | 'out'; at: string; shiftEnd: string | null; extra: number | null }
   | { ok: false; error: string };
 
 function codeFrom(raw: string) {
@@ -24,13 +24,13 @@ export async function fichar(raw: string): Promise<FicharResult> {
     const msg = error.message.match(/(No has iniciado|Este QR|Ya has fichado)[^"]*/)?.[0];
     return { ok: false, error: msg ?? 'No se ha podido fichar. Inténtalo otra vez.' };
   }
-  const row = (data as { kind: 'in' | 'out'; at: string; ends_at: string | null }[])[0];
+  const row = (data as { id: string; kind: 'in' | 'out'; at: string; ends_at: string | null }[])[0];
   // Regla de salida: solo cuenta lo que pasa del fin de turno.
   const extra = row.kind === 'out' && row.ends_at
     ? Math.max(0, Math.floor((new Date(row.at).getTime() - new Date(row.ends_at).getTime()) / 60000))
     : null;
   revalidatePath('/', 'layout');
-  return { ok: true, kind: row.kind, at: row.at, shiftEnd: row.ends_at, extra };
+  return { ok: true, id: row.id, kind: row.kind, at: row.at, shiftEnd: row.ends_at, extra };
 }
 
 export async function requestCorrection(_: unknown, fd: FormData) {
@@ -74,14 +74,14 @@ export async function saveShift(_: unknown, fd: FormData) {
     p_label: String(fd.get('label') ?? ''),
     p_note: String(fd.get('note') ?? ''),
   });
-  if (error) return { error: 'Revisa trabajador, día y horas.' };
+  if (error) return { error: /fichado/.test(error.message) ? 'Ese turno ya está fichado y terminado: solo se puede cambiar el puesto o la tarea. Si hay un error de horas, pide una corrección de fichaje.' : 'Revisa trabajador, día y horas.' };
   revalidatePath('/', 'layout');
   return { ok: id ? 'Turno actualizado.' : 'Turno creado.' };
 }
 
 export async function deleteShift(fd: FormData) {
   const { sb } = await requireOwner();
-  await sb.from('shifts').delete().eq('id', String(fd.get('id')));
+  await sb.from('shifts').delete().eq('id', String(fd.get('id'))); // si está fichado y terminado, la base de datos lo impide
   revalidatePath('/', 'layout');
 }
 
@@ -180,4 +180,90 @@ export async function saveTemplates(fd: FormData) {
     }
   }
   revalidatePath('/', 'layout');
+}
+
+export async function clearWeek(_: unknown, fd: FormData) {
+  const { sb } = await requireOwner();
+  const { data, error } = await sb.rpc('clear_week', { p_monday: String(fd.get('monday')) });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido borrar la semana.' };
+  const r = (data as { deleted: number; kept: number }[])[0];
+  return {
+    ok: `Borrados ${r.deleted} turnos.` + (r.kept ? ` ${r.kept} se han conservado porque ya tienen fichajes.` : ''),
+  };
+}
+
+/* ---------------- Perfil ---------------- */
+
+export async function setMyColor(fd: FormData) {
+  const { sb } = await requireProfile();
+  const c = String(fd.get('color') ?? '');
+  await sb.rpc('set_my_color', { p_color: /^#[0-9A-Fa-f]{6}$/.test(c) ? c : null });
+  revalidatePath('/', 'layout');
+}
+
+/* ---------------- Nómina y control ---------------- */
+
+export async function closePeriod(_: unknown, fd: FormData) {
+  const { sb } = await requireOwner();
+  const paid = parseHours(String(fd.get('paid') ?? '0'));
+  if (!Number.isFinite(paid) || paid < 0) return { error: 'Escribe las horas pagadas, por ejemplo 5 o 5:30.' };
+  const { error } = await sb.rpc('close_period', {
+    p_user: String(fd.get('user_id')), p_month: `${String(fd.get('month'))}-01`,
+    p_paid: paid, p_note: String(fd.get('note') ?? ''),
+  });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido cerrar.' };
+  return { ok: 'Nómina cerrada. La trabajadora ya lo ve y puede dar su conformidad.' };
+}
+
+export async function respondClosing(_: unknown, fd: FormData) {
+  const { sb } = await requireProfile();
+  const { error } = await sb.rpc('respond_closing', {
+    p_id: String(fd.get('id')), p_agree: fd.get('agree') === '1', p_comment: String(fd.get('comment') ?? ''),
+  });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: 'Respuesta guardada.' };
+}
+
+export async function setOpening(_: unknown, fd: FormData) {
+  const { sb } = await requireOwner();
+  const min = parseHours(String(fd.get('opening') ?? '0'));
+  if (!Number.isFinite(min)) return { error: 'Escribe las horas, por ejemplo -7 o 3:30.' };
+  const { error } = await sb.rpc('set_opening', { p_user: String(fd.get('user_id')), p_minutes: min, p_note: String(fd.get('note') ?? '') });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: 'Saldo inicial guardado.' };
+}
+
+export async function setPayStartDay(fd: FormData) {
+  const { sb } = await requireOwner();
+  const d = Number(fd.get('day'));
+  if (!Number.isInteger(d) || d < 1 || d > 28) return;
+  await sb.rpc('set_pay_start_day', { p_day: d });
+  revalidatePath('/', 'layout');
+}
+
+export async function shiftFromPunches(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.rpc('shift_from_punches', { p_user: String(fd.get('user_id')), p_date: String(fd.get('date')) });
+  revalidatePath('/', 'layout');
+}
+
+/** Anular un fichaje: la trabajadora en los 10 minutos siguientes, la encargada siempre (con motivo). */
+export async function voidPunch(id: string, reason: string) {
+  const { sb } = await requireProfile();
+  const { error } = await sb.rpc('void_punch', { p_id: id, p_reason: reason });
+  revalidatePath('/', 'layout');
+  if (error) {
+    if (/10 minutos/.test(error.message)) return { error: 'Han pasado más de 10 minutos: pídeselo a la encargada.' };
+    if (/motivo/.test(error.message)) return { error: 'Escribe el motivo.' };
+    return { error: 'No se ha podido anular.' };
+  }
+  return { ok: 'Fichaje anulado.' };
+}
+
+export async function voidPunchForm(_: unknown, fd: FormData) {
+  return voidPunch(String(fd.get('id')), String(fd.get('reason') ?? ''));
 }

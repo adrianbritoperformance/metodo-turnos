@@ -96,3 +96,58 @@ export function fmtWeek(monday: string) {
   };
   return `${f(monday, monday.slice(5, 7) !== end.slice(5, 7))}–${f(end, true)}`;
 }
+
+/* ---------------- Periodo de nómina ---------------- */
+
+/** Periodo de la nómina del mes `month` ("YYYY-MM"): con corte 26 → del 26 del mes anterior al 25. */
+export function payPeriod(month: string, startDay: number) {
+  if (startDay <= 1) {
+    const end = addDays(`${shiftMonth(month, 1)}-01`, -1);
+    return { start: `${month}-01`, end };
+  }
+  const prev = shiftMonth(month, -1);
+  return { start: `${prev}-${String(startDay).padStart(2, '0')}`, end: `${month}-${String(startDay - 1).padStart(2, '0')}` };
+}
+
+/** Mes de nómina al que pertenece un día. */
+export function payMonthOf(day: string, startDay: number) {
+  if (startDay <= 1) return day.slice(0, 7);
+  return Number(day.slice(8)) >= startDay ? shiftMonth(day.slice(0, 7), 1) : day.slice(0, 7);
+}
+
+/** "26 oct – 25 nov" */
+export function fmtRange(start: string, end: string) {
+  const f = (d: string) => {
+    const [y, m, dd] = d.split('-').map(Number);
+    return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, dd))).replace('.', '');
+  };
+  return `${f(start)} – ${f(end)}`;
+}
+
+/** Nombre del mes de nómina: "Noviembre" */
+export function monthOnly(month: string) {
+  const [y, m] = month.split('-').map(Number);
+  const s = new Intl.DateTimeFormat('es-ES', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Días entre dos fechas "YYYY-MM-DD" (b − a). */
+export function daysBetween(a: string, b: string) {
+  const t = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return Date.UTC(y, m - 1, dd); };
+  return Math.round((t(b) - t(a)) / 86400000);
+}
+
+/** Lee "5", "5,5", "5:30" o "5 h 30" como minutos. */
+export function parseHours(v: string) {
+  const s = v.trim().replace(/\s*h\s*/i, ':').replace(',', '.');
+  if (!s) return 0;
+  const neg = s.startsWith('-') || s.startsWith('−');
+  const t = s.replace(/^[-−]/, '');
+  let min: number;
+  if (t.includes(':')) {
+    const [h, m] = t.split(':');
+    min = Number(h || 0) * 60 + Number(m || 0);
+  } else min = Math.round(Number(t) * 60);
+  if (!Number.isFinite(min)) return NaN;
+  return neg ? -min : min;
+}

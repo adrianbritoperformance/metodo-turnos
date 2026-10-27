@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import jsQR from 'jsqr';
 import { fichar, type FicharResult } from './actions';
+import { VoidRecent } from './VoidRecent';
 import { fmtMinutes, fmtTime } from '@/lib/time';
 
 /** Botón grande de fichar: abre la cámara, lee el QR del local y registra entrada/salida. */
@@ -89,7 +90,9 @@ export function Scanner({ nextKind, autoCode }: { nextKind: 'in' | 'out'; autoCo
               ? <>Has salido {fmtMinutes(result.extra).replace('+', '')} después de tu hora. Se suman a tu bolsa.</>
               : <>Saliste a tu hora: no suma a la bolsa.</>)}
             {result.kind === 'out' && result.extra === null && 'No había turno asignado ahora: la encargada lo verá en el registro.'}
+            {result.kind === 'in' && result.shiftEnd === null && ' Ojo: no tenías turno puesto ahora. Si te has equivocado de día, anúlalo.'}
           </div>
+          <VoidRecent id={result.id} />
         </div>
       )}
       {result && !result.ok && <div className="alert err" role="alert">{result.error}</div>}
