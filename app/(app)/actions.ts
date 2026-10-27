@@ -152,3 +152,32 @@ export async function markOrdered() {
     .eq('business_id', profile.business_id).gt('status', 0);
   revalidatePath('/reponer');
 }
+
+/* ---------------- Turnos tipo (Mañana / Tarde) ---------------- */
+
+export async function toggleTemplate(userId: string, date: string, templateId: string, on: boolean) {
+  const { sb } = await requireOwner();
+  const { error } = await sb.rpc('toggle_template_shift', { p_user: userId, p_date: date, p_template: templateId, p_on: on });
+  revalidatePath('/turnos');
+  if (error) return { error: /fichajes/.test(error.message) ? 'Ese turno ya tiene fichajes: no se puede quitar.' : 'No se ha podido guardar.' };
+  return {};
+}
+
+export async function copyWeek(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.rpc('copy_week', { p_from: String(fd.get('from')), p_to: String(fd.get('to')) });
+  revalidatePath('/', 'layout');
+}
+
+export async function saveTemplates(fd: FormData) {
+  const { sb } = await requireOwner();
+  const ids = fd.getAll('id').map(String);
+  for (const id of ids) {
+    const st = String(fd.get(`start_${id}`) ?? '');
+    const en = String(fd.get(`end_${id}`) ?? '');
+    if (/^\d{2}:\d{2}/.test(st) && /^\d{2}:\d{2}/.test(en)) {
+      await sb.from('shift_templates').update({ start_time: st, end_time: en }).eq('id', id);
+    }
+  }
+  revalidatePath('/', 'layout');
+}

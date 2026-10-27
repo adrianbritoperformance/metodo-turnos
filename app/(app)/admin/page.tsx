@@ -3,7 +3,7 @@ import { headers } from 'next/headers';
 import QRCode from 'qrcode';
 import { requireOwner } from '@/lib/supabase';
 import { fmtDay, fmtHours, fmtMinutes, fmtTime, monthName, shiftMonth, ymd } from '@/lib/time';
-import { reviewCorrection, rotateQr, setContract, setMember } from '../actions';
+import { reviewCorrection, rotateQr, saveTemplates, setContract, setMember } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,14 +17,16 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const month = m && /^\d{4}-\d{2}$/.test(m) ? m : ymd().slice(0, 7);
   const { sb, profile } = await requireOwner();
 
-  const [{ data: corr }, { data: people }, { data: bal }, { data: codes }] = await Promise.all([
+  const [{ data: corr }, { data: people }, { data: bal }, { data: codes }, { data: tpls }] = await Promise.all([
     sb.from('corrections').select('id, kind, requested_at, reason, profiles:user_id(full_name), shifts(starts_at, ends_at)')
       .eq('status', 'pending').order('created_at'),
     sb.rpc('get_contracts'),
     sb.from('week_balance').select('user_id, balance_minutes, worked_minutes, contract_minutes, has_missing_out, closed')
       .gte('week_start', `${month}-01`).lt('week_start', `${shiftMonth(month, 1)}-01`),
     sb.rpc('get_admin_codes'),
+    sb.from('shift_templates').select('id, name, start_time, end_time').order('sort'),
   ]);
+  const templates = (tpls ?? []) as { id: string; name: string; start_time: string; end_time: string }[];
 
   const pending = (corr ?? []) as unknown as Corr[];
   const team = ((people ?? []) as { user_id: string; full_name: string; weekly_hours: number; role: string; active: boolean }[])
@@ -114,6 +116,22 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         })}
       </div>
       <a className="btn soft" href={`/admin/export?m=${month}`}>Descargar registro de {monthName(month)} (CSV)</a>
+
+      <h2>Horario de los turnos</h2>
+      <form action={saveTemplates} className="card" style={{ gap: 12 }}>
+        <div className="small muted">Son las horas que se ponen al tocar Mañana o Tarde en el cuadrante. Cambiarlas no modifica los turnos ya puestos.</div>
+        {templates.map((t) => (
+          <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input type="hidden" name="id" value={t.id} />
+            <div style={{ fontWeight: 700 }}>{t.name}</div>
+            <div className="grid2">
+              <label>Entrada<input type="time" name={`start_${t.id}`} defaultValue={t.start_time.slice(0, 5)} required /></label>
+              <label>Salida<input type="time" name={`end_${t.id}`} defaultValue={t.end_time.slice(0, 5)} required /></label>
+            </div>
+          </div>
+        ))}
+        <button className="btn">Guardar horarios</button>
+      </form>
 
       <h2>QR para fichar</h2>
       <div className="card" style={{ alignItems: 'center', textAlign: 'center' }}>
