@@ -77,3 +77,22 @@ export function fmtMinutes(min: number) {
   if (h === 0) return `${sign}${m} min`;
   return m === 0 ? `${sign}${h} h` : `${sign}${h} h ${m} min`;
 }
+
+/** "32 h 10" sin signo */
+export function fmtHours(min: number) {
+  const a = Math.round(Math.abs(min));
+  const h = Math.floor(a / 60);
+  const m = a % 60;
+  return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, '0')}`;
+}
+
+/** "20–26 oct" para una semana que empieza el lunes `monday` (YYYY-MM-DD) */
+export function fmtWeek(monday: string) {
+  const end = addDays(monday, 6);
+  const f = (d: string, withMonth: boolean) => {
+    const [y, m, dd] = d.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, dd));
+    return new Intl.DateTimeFormat('es-ES', { day: 'numeric', ...(withMonth ? { month: 'short' } : {}), timeZone: 'UTC' }).format(t).replace('.', '');
+  };
+  return `${f(monday, monday.slice(5, 7) !== end.slice(5, 7))}–${f(end, true)}`;
+}

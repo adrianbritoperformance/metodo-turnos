@@ -37,7 +37,7 @@ export async function requireProfile() {
   const sb = await supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) redirect('/login');
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single<Profile>();
+  const { data: profile } = await sb.from('profiles').select('id, business_id, full_name, role, active').eq('id', user.id).single<Profile>();
   if (!profile) redirect('/login?e=perfil');
   return { sb, user, profile };
 }

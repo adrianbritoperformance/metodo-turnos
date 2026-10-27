@@ -17,19 +17,29 @@ export async function GET(req: NextRequest) {
   if (!/^\d{4}-\d{2}$/.test(m)) return new NextResponse('Mes no válido', { status: 400 });
   const { from, to } = monthRange(m);
 
-  const [{ data: rows }, { data: people }] = await Promise.all([
+  const next = `${Number(m.slice(5)) === 12 ? Number(m.slice(0, 4)) + 1 : m.slice(0, 4)}-${String(Number(m.slice(5)) % 12 + 1).padStart(2, '0')}`;
+  const [{ data: rows }, { data: people }, { data: weeks }] = await Promise.all([
     sb.from('shift_balance').select('*').gte('starts_at', from).lt('starts_at', to).order('starts_at'),
     sb.from('profiles').select('id, full_name'),
+    sb.from('week_balance').select('*').gte('week_start', `${m}-01`).lt('week_start', `${next}-01`).order('week_start'),
   ]);
+  const hm = (min: number) => `${min < 0 ? '-' : ''}${Math.floor(Math.abs(min) / 60)}:${String(Math.abs(min) % 60).padStart(2, '0')}`;
   const name = new Map((people ?? []).map((p) => [p.id, p.full_name]));
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
   const lines = [
-    ['Trabajador', 'Fecha', 'Puesto', 'Inicio previsto', 'Fin previsto', 'Entrada real', 'Salida real', 'Minutos extra (salida)', 'Corrección pendiente'],
+    ['REGISTRO DE JORNADA'],
+    ['Trabajador', 'Fecha', 'Puesto', 'Inicio previsto', 'Fin previsto', 'Entrada real', 'Salida real', 'Duración prevista', 'Minutos extra (salida)', 'Corrección pendiente'],
     ...(rows ?? []).map((r) => [
       name.get(r.user_id) ?? '', ymd(r.starts_at), r.label ?? '',
       fmtTime(r.starts_at), fmtTime(r.ends_at), fmtTime(r.real_in), fmtTime(r.real_out),
-      r.extra_minutes ?? '', r.has_pending_correction ? 'Sí' : '',
+      hm(r.planned_minutes ?? 0), r.extra_minutes ?? '', r.has_pending_correction ? 'Sí' : '',
+    ]),
+    [],
+    ['SALDO SEMANAL FRENTE A CONTRATO'],
+    ['Trabajador', 'Semana (lunes)', 'Horas hechas', 'Horas contrato', 'Saldo', 'Semana cerrada'],
+    ...(weeks ?? []).map((w) => [
+      name.get(w.user_id) ?? '', w.week_start, hm(w.worked_minutes), hm(w.contract_minutes), hm(w.balance_minutes), w.closed ? 'Sí' : 'No',
     ]),
   ];
   // BOM + punto y coma para que Excel en español lo abra bien

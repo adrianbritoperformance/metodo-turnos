@@ -108,6 +108,14 @@ export async function setMember(fd: FormData) {
   revalidatePath('/admin');
 }
 
+export async function setContract(fd: FormData) {
+  const { sb } = await requireOwner();
+  const h = Number(String(fd.get('weekly_hours') ?? '').replace(',', '.'));
+  if (!Number.isFinite(h) || h < 0 || h > 60) return;
+  await sb.from('profiles').update({ weekly_hours: Math.round(h * 2) / 2 }).eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
 /* ---------------- Reposición ---------------- */
 
 export async function setStock(id: string, status: number) {

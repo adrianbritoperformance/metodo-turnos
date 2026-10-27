@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { requireProfile } from '@/lib/supabase';
-import { addDays, dayRange, fmtLongDay, fmtTime, madridMidnight, mondayOf, ymd } from '@/lib/time';
+import { addDays, dayRange, fmtHours, fmtLongDay, fmtTime, fmtWeek, madridMidnight, mondayOf, ymd } from '@/lib/time';
 import { ShiftForm } from '../Forms';
 import { deleteShift } from '../actions';
 
@@ -22,13 +22,25 @@ export default async function Turnos({ searchParams }: { searchParams: Promise<{
   const mon = mondayOf(day);
   const week = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
 
-  const [{ data }, { data: people }] = await Promise.all([
+  const weekFrom = madridMidnight(mon).toISOString();
+  const weekTo = madridMidnight(addDays(mon, 7)).toISOString();
+  const [{ data }, { data: people }, { data: weekShifts }, { data: contracts }] = await Promise.all([
     sb.from('shifts').select('id, user_id, starts_at, ends_at, label, note, changed_at, profiles(full_name)')
       .gte('starts_at', from).lt('starts_at', to).order('starts_at'),
     owner
       ? sb.from('profiles').select('id, full_name').eq('active', true).order('full_name')
       : Promise.resolve({ data: [] as { id: string; full_name: string }[] }),
+    owner
+      ? sb.from('shift_balance').select('user_id, planned_minutes').gte('starts_at', weekFrom).lt('starts_at', weekTo)
+      : Promise.resolve({ data: [] }),
+    owner ? sb.rpc('get_contracts') : Promise.resolve({ data: [] }),
   ]);
+  const planned = new Map<string, number>();
+  for (const w of (weekShifts ?? []) as { user_id: string; planned_minutes: number }[])
+    planned.set(w.user_id, (planned.get(w.user_id) ?? 0) + w.planned_minutes);
+  const load = ((contracts ?? []) as { user_id: string; full_name: string; weekly_hours: number; active: boolean }[])
+    .filter((c) => c.active)
+    .map((c) => ({ name: c.full_name, plan: planned.get(c.user_id) ?? 0, contract: Number(c.weekly_hours) * 60 }));
   const rows = (data ?? []) as unknown as Row[];
   const team = (people ?? []) as { id: string; full_name: string }[];
 
@@ -50,6 +62,30 @@ export default async function Turnos({ searchParams }: { searchParams: Promise<{
         </div>
         <Link className="btn ghost sm" href={`/turnos?d=${addDays(mon, 7)}`} aria-label="Semana siguiente" style={{ padding: '0 10px' }}>›</Link>
       </div>
+
+      {owner && load.length > 0 && (
+        <details className="card">
+          <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="eyebrow">Horas puestas · semana {fmtWeek(mon)}</span>
+            <span className="small" style={{ textDecoration: 'underline', color: 'var(--suave)' }}>Ver</span>
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', marginTop: 8 }}>
+            {load.map((l) => {
+              const diff = l.plan - l.contract;
+              const cls = diff === 0 ? 'ok' : diff > 0 ? 'out' : 'low';
+              return (
+                <div key={l.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--linea)' }}>
+                  <span style={{ fontWeight: 700 }}>{l.name}</span>
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className="small">{fmtHours(l.plan)} / {fmtHours(l.contract)}</span>
+                    <span className={`pill ${cls}`}>{diff === 0 ? 'Justo' : diff > 0 ? `+${fmtHours(diff)}` : `−${fmtHours(diff)}`}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       <h2>{fmtLongDay(madridMidnight(day))}</h2>
 

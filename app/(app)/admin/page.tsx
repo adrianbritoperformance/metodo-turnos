@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import QRCode from 'qrcode';
 import { requireOwner } from '@/lib/supabase';
-import { fmtDay, fmtMinutes, fmtTime, monthName, monthRange, shiftMonth, ymd } from '@/lib/time';
-import { reviewCorrection, rotateQr, setMember } from '../actions';
+import { fmtDay, fmtHours, fmtMinutes, fmtTime, monthName, shiftMonth, ymd } from '@/lib/time';
+import { reviewCorrection, rotateQr, setContract, setMember } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,26 +16,26 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const { m } = await searchParams;
   const month = m && /^\d{4}-\d{2}$/.test(m) ? m : ymd().slice(0, 7);
   const { sb, profile } = await requireOwner();
-  const { from, to } = monthRange(month);
 
   const [{ data: corr }, { data: people }, { data: bal }, { data: codes }] = await Promise.all([
     sb.from('corrections').select('id, kind, requested_at, reason, profiles:user_id(full_name), shifts(starts_at, ends_at)')
       .eq('status', 'pending').order('created_at'),
-    sb.from('profiles').select('id, full_name, role, active').order('full_name'),
-    sb.from('shift_balance').select('user_id, extra_minutes, real_out, starts_at').gte('starts_at', from).lt('starts_at', to),
+    sb.rpc('get_contracts'),
+    sb.from('week_balance').select('user_id, balance_minutes, worked_minutes, contract_minutes, has_missing_out, closed')
+      .gte('week_start', `${month}-01`).lt('week_start', `${shiftMonth(month, 1)}-01`),
     sb.rpc('get_admin_codes'),
   ]);
 
   const pending = (corr ?? []) as unknown as Corr[];
-  const team = (people ?? []) as { id: string; full_name: string; role: string; active: boolean }[];
-  const totals = new Map<string, { min: number; shifts: number; open: number }>();
-  for (const b of (bal ?? []) as { user_id: string; extra_minutes: number | null; real_out: string | null; starts_at: string }[]) {
-    if (new Date(b.starts_at).getTime() > Date.now()) continue;
-    const t = totals.get(b.user_id) ?? { min: 0, shifts: 0, open: 0 };
-    t.min += b.extra_minutes ?? 0;
-    t.shifts += 1;
-    if (!b.real_out) t.open += 1;
-    totals.set(b.user_id, t);
+  const team = ((people ?? []) as { user_id: string; full_name: string; weekly_hours: number; role: string; active: boolean }[])
+    .map((p) => ({ ...p, id: p.user_id, weekly_hours: Number(p.weekly_hours) }));
+  type W = { user_id: string; balance_minutes: number; worked_minutes: number; contract_minutes: number; has_missing_out: boolean; closed: boolean };
+  const totals = new Map<string, { balance: number; weeks: number; missing: boolean; now?: W }>();
+  for (const w of (bal ?? []) as W[]) {
+    const t = totals.get(w.user_id) ?? { balance: 0, weeks: 0, missing: false };
+    if (w.closed) { t.balance += w.balance_minutes; t.weeks += 1; t.missing ||= w.has_missing_out; }
+    else t.now = w;
+    totals.set(w.user_id, t);
   }
 
   const h = await headers();
@@ -66,7 +66,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
       ))}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-        <h2 style={{ margin: 0 }}>Equipo · {monthName(month)}</h2>
+        <h2 style={{ margin: 0 }}>Saldo del equipo · {monthName(month)}</h2>
         <div style={{ display: 'flex', gap: 6 }}>
           <Link className="btn ghost sm" href={`/admin?m=${shiftMonth(month, -1)}`} aria-label="Mes anterior">‹</Link>
           <Link className="btn ghost sm" href={`/admin?m=${shiftMonth(month, 1)}`} aria-label="Mes siguiente">›</Link>
@@ -81,11 +81,20 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                 <div>
                   <div className="t">{p.full_name}{!p.active ? ' (baja)' : ''}</div>
                   <div className="muted small">
-                    {p.role === 'owner' ? 'Encargada · ' : ''}{t?.shifts ?? 0} turnos{t?.open ? ` · ${t.open} sin salida` : ''}
+                    {p.role === 'owner' ? 'Encargada · ' : ''}{p.weekly_hours} h/sem · {t?.weeks ?? 0} sem. cerradas
+                    {t?.now ? ` · esta semana ${fmtHours(t.now.worked_minutes)}/${fmtHours(t.now.contract_minutes)}` : ''}
+                    {t?.missing ? ' · falta alguna salida' : ''}
                   </div>
                 </div>
-                <div className="num">{fmtMinutes(t?.min ?? 0)}</div>
+                <div className="num" style={{ color: (t?.balance ?? 0) < 0 ? 'var(--terracota)' : undefined }}>{fmtMinutes(t?.balance ?? 0)}</div>
               </summary>
+              <form action={setContract} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 10 }}>
+                <input type="hidden" name="id" value={p.id} />
+                <label style={{ flex: 1 }}>Horas de contrato por semana
+                  <input name="weekly_hours" type="number" min={0} max={60} step={0.5} defaultValue={p.weekly_hours} inputMode="decimal" />
+                </label>
+                <button className="btn sm">Guardar</button>
+              </form>
               {p.id !== profile.id && (
                 <div className="btn-row" style={{ marginTop: 10 }}>
                   <form action={setMember}>

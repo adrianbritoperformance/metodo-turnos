@@ -4,17 +4,21 @@ Fichaje con QR, bolsa de horas, cuadrante y reposición. Next.js + Supabase, des
 
 ## Regla de la bolsa de horas
 
-Solo cuenta lo que se sale **después** de la hora de fin del turno.
-Entrar antes no suma. Entrar tarde o salir antes no resta.
-Ejemplo: turno 8:30–13:30, ficha 8:20 y 13:38 → **+8 min**.
+**Saldo semanal frente al contrato** (semana de lunes a domingo):
+- Horas hechas de cada turno = duración prevista + lo que se sale **después** de la hora de fin.
+  Entrar antes no suma; entrar tarde no resta.
+- Saldo de la semana = horas hechas − horas de contrato de esa persona. Si hace más, suma; si hace menos, resta.
+- El saldo del mes es la suma de sus semanas cerradas (semanas que empiezan en ese mes).
+- Las semanas sin ningún turno (vacaciones) no cuentan.
 
-La regla está en la vista `shift_balance` de `supabase/schema.sql`.
+Las horas de contrato de cada persona se cambian en **Gestión → Saldo del equipo** (por defecto 40 h).
+La lógica está en las vistas `shift_balance` y `week_balance` (`supabase/02_contrato.sql`).
 
 ## Puesta en marcha
 
 ### 1. Supabase (base de datos y usuarios)
 1. supabase.com → **New project** (región: Europe West / Frankfurt). Guarda la contraseña de la base de datos.
-2. Menú **SQL Editor** → New query → pega todo `supabase/schema.sql` → **Run**.
+2. Menú **SQL Editor** → New query → pega todo `supabase/schema.sql` → **Run**. Después, otra query nueva con `supabase/02_contrato.sql` → **Run**.
    - Crea el local "Método Café" con el código de alta **METODO2026** (puedes cambiarlo en la última parte del archivo antes de ejecutarlo).
 3. **Authentication → Sign In / Providers → Email**: para pruebas, desactiva **Confirm email** (así no hay que confirmar por correo). Se puede volver a activar después.
 4. **Project Settings → API**: copia `Project URL` y la clave `anon public`.
