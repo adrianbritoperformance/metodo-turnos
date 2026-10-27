@@ -55,6 +55,8 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
         <Link className="btn ghost sm" href={`/horas?m=${shiftMonth(month, 1)}`} style={{ flex: '0 0 auto' }} aria-label="Nómina siguiente">›</Link>
       </div>
 
+      <div className="cols">
+      <div className="col sticky">
       {/* ---- Resumen del periodo ---- */}
       <div className="card dark" style={{ gap: 10 }}>
         <div className="eyebrow">{c ? 'Cierre de la nómina' : p.finished ? 'Periodo terminado · pendiente de cierre' : 'Periodo en curso'}</div>
@@ -80,6 +82,9 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
         </div>
       )}
 
+      <a className="btn soft" href={`/horas/export?m=${month}`}>Descargar mi registro (Excel)</a>
+      </div>
+      <div className="col">
       {/* ---- Desglose por semanas y días ---- */}
       {p.weeks.length === 0 && <div className="card"><div className="muted">Aún no hay turnos en este periodo.</div></div>}
       {p.weeks.map((w) => {
@@ -121,8 +126,6 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
         Tu contrato ({weekly} h/semana) se reparte por días en las semanas que caen entre dos nóminas.
       </p>
 
-      <a className="btn soft" href={`/horas/export?m=${month}`}>Descargar mi registro (Excel)</a>
-
       {p.pastShifts.length > 0 && (
         <details className="card">
           <summary className="btn ghost">¿Se te olvidó fichar? Pedir corrección</summary>
@@ -157,6 +160,8 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
           ))}
         </div>
       )}
+      </div>
+      </div>
     </>
   );
 }

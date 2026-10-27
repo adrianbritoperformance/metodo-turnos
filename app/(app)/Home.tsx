@@ -44,22 +44,28 @@ export async function Home({ autoCode }: { autoCode?: string }) {
   return (
     <>
       <h1>Hola, {firstName}</h1>
+      <div className="cols">
+      <div className="col">
 
       {shifts.length === 0 ? (
         <div className="card yellow">
           <div className="eyebrow">Hoy</div>
           <div className="big" style={{ fontSize: 24 }}>Sin turno asignado</div>
         </div>
-      ) : shifts.map((s) => (
-        <div key={s.id} className="card yellow">
+      ) : (
+        <div className="card yellow">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
             <div className="eyebrow">Tu turno de hoy</div>
-            {recentlyChanged(s) && <span className="pill out">Turno cambiado</span>}
+            {shifts.some(recentlyChanged) && <span className="pill out">Turno cambiado</span>}
           </div>
-          <div className="big">{fmtTime(s.starts_at)} – {fmtTime(s.ends_at)}</div>
-          {s.label && <div className="muted">{s.label}</div>}
+          <div className="big" style={{ display: 'flex', flexWrap: 'wrap', columnGap: 14 }}>
+            {shifts.map((s, i) => (
+              <span key={s.id}>{i > 0 && <span style={{ opacity: .4, marginRight: 14 }}>/</span>}{fmtTime(s.starts_at)}–{fmtTime(s.ends_at)}</span>
+            ))}
+          </div>
+          {shifts.some((s) => s.label) && <div className="muted">{shifts.map((s) => s.label).filter(Boolean).join(' · ')}</div>}
         </div>
-      ))}
+      )}
 
       {last?.[0] && Date.now() - new Date(last[0].created_at).getTime() < 10 * 60e3 && (
         <div className="card">
@@ -85,6 +91,8 @@ export async function Home({ autoCode }: { autoCode?: string }) {
         </div>
       ))}
 
+      </div>
+      <div className="col">
       {nextDays.length > 0 && (
         <>
           <h2>Próximos turnos</h2>
@@ -104,6 +112,9 @@ export async function Home({ autoCode }: { autoCode?: string }) {
           </div>
         </>
       )}
+      {nextDays.length === 0 && <div className="card"><div className="muted">No tienes más turnos esta semana.</div></div>}
+      </div>
+      </div>
     </>
   );
 }

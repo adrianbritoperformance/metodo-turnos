@@ -116,10 +116,10 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
 
 @media (min-width: 1000px) {
   .app { max-width: none; margin: 0; padding-left: 232px; }
-  .top { max-width: 1240px; padding: 22px 36px 6px; }
-  .main { max-width: 1240px; padding: 12px 36px 48px; }
-  .main > * { width: 100%; max-width: 760px; }
-  .main > .cols { max-width: none; }
+  .top, .main { width: 100%; max-width: 1360px; margin: 0 auto; }
+  .top { padding: 22px 40px 6px; }
+  .main { padding: 12px 40px 48px; }
+  .narrow { max-width: 640px; }
   .nav {
     top: 0; right: auto; width: 232px; border-top: 0; border-right: 1px solid #D9C7B4;
     padding: 96px 14px 24px;
@@ -130,7 +130,8 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
   .nav a:hover { background: #F3EBE1; }
   .top img { width: 140px; }
 
-  .cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+  .cols.wide-left { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
   .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .col.sticky { position: sticky; top: 16px; }
   .cal-dot { width: 12px; height: 12px; }
@@ -138,4 +139,5 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
 }
 @media (max-width: 999px) {
   .cols, .col { display: flex; flex-direction: column; gap: 14px; }
+  .col.first-mobile { order: -1; }
 }

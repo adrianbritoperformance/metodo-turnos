@@ -18,6 +18,19 @@ export default async function Reponer() {
   return (
     <>
       <h1>Reposición</h1>
+      <div className="cols wide-left">
+      <div className="col">
+      <p className="muted" style={{ margin: 0 }}>Toca un producto para cambiar: Hay → Queda poco → Falta.</p>
+
+      <div className="list">
+        {items.map((i) => (
+          <StockRow key={`${i.id}-${i.status}`} id={i.id} name={i.name} place={i.place} status={i.status} updatedBy={i.profiles?.full_name?.split(' ')[0]} />
+        ))}
+        {items.length === 0 && <div className="row muted">Aún no hay productos.</div>}
+      </div>
+
+      </div>
+      <div className="col sticky first-mobile">
       <div className="card dark" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div className="eyebrow">Para el próximo pedido</div>
@@ -29,15 +42,6 @@ export default async function Reponer() {
           </form>
         )}
       </div>
-      <p className="muted" style={{ margin: 0 }}>Toca un producto para cambiar: Hay → Queda poco → Falta.</p>
-
-      <div className="list">
-        {items.map((i) => (
-          <StockRow key={`${i.id}-${i.status}`} id={i.id} name={i.name} place={i.place} status={i.status} updatedBy={i.profiles?.full_name?.split(' ')[0]} />
-        ))}
-        {items.length === 0 && <div className="row muted">Aún no hay productos.</div>}
-      </div>
-
       {owner && toOrder.length > 0 && (
         <div className="card">
           <div className="eyebrow">Lista para pedir</div>
@@ -64,6 +68,8 @@ export default async function Reponer() {
           </div>
         </details>
       )}
+      </div>
+      </div>
     </>
   );
 }

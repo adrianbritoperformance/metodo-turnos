@@ -74,7 +74,7 @@ export async function saveShift(_: unknown, fd: FormData) {
     p_label: String(fd.get('label') ?? ''),
     p_note: String(fd.get('note') ?? ''),
   });
-  if (error) return { error: /fichado/.test(error.message) ? 'Ese turno ya está fichado y terminado: solo se puede cambiar el puesto o la tarea. Si hay un error de horas, pide una corrección de fichaje.' : 'Revisa trabajador, día y horas.' };
+  if (error) return { error: /solapa/.test(error.message) ? 'Esa persona ya tiene otro turno que se pisa con este horario.' : /fichado/.test(error.message) ? 'Ese turno ya está fichado y terminado: solo se puede cambiar el puesto o la tarea. Si hay un error de horas, pide una corrección de fichaje.' : 'Revisa trabajador, día y horas.' };
   revalidatePath('/', 'layout');
   return { ok: id ? 'Turno actualizado.' : 'Turno creado.' };
 }
@@ -159,7 +159,7 @@ export async function toggleTemplate(userId: string, date: string, templateId: s
   const { sb } = await requireOwner();
   const { error } = await sb.rpc('toggle_template_shift', { p_user: userId, p_date: date, p_template: templateId, p_on: on });
   revalidatePath('/turnos');
-  if (error) return { error: /fichajes/.test(error.message) ? 'Ese turno ya tiene fichajes: no se puede quitar.' : 'No se ha podido guardar.' };
+  if (error) return { error: /fichajes/.test(error.message) ? 'Ese turno ya tiene fichajes: no se puede quitar.' : /solapa/.test(error.message) ? 'Ya tiene otro turno a esa hora.' : 'No se ha podido guardar.' };
   return {};
 }
 

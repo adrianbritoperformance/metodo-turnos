@@ -14,7 +14,7 @@ export default async function Perfil() {
   const taken = new Set(list.filter((p) => p.id !== profile.id && p.color).map((p) => p.color!.toUpperCase()));
 
   return (
-    <>
+    <div className="narrow" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <h1>Mi perfil</h1>
       <div className="card" style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <span aria-hidden="true" style={{ width: 28, height: 28, borderRadius: 99, background: mine }} />
@@ -46,6 +46,6 @@ export default async function Perfil() {
       <form action={logout}>
         <button className="btn ghost" style={{ width: '100%' }}>Cerrar sesión</button>
       </form>
-    </>
+    </div>
   );
 }
