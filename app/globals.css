@@ -150,3 +150,10 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
 }
 
 @media (max-width: 420px) { .nav a { font-size: 11px; } }
+
+/* Barra de guardar de la Plantilla: fija abajo, con fondo propio */
+.save-bar { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 5; background: var(--crema);
+  padding: 10px 0; box-shadow: 0 -8px 16px -8px rgba(73,39,26,.18); }
+.save-bar .btn[disabled] { opacity: 1; filter: grayscale(.4); background-clip: padding-box; }
+.save-bar .btn.ghost[disabled] { background: var(--papel); }
+@media (min-width: 1000px) { .save-bar { bottom: 0; } }

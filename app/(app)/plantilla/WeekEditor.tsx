@@ -90,37 +90,56 @@ export function WeekEditor({ userId, name, days, contractMinutes, extraMinutes =
                 {d.absence && <span className="pill out">{d.absence}</span>}
                 {d.extras.map((x) => <span key={x} className="pill low">Otro: {x}</span>)}
                 <span className="small muted">{hhmm(grid[di].reduce((a, s) => a + (s.on ? mins(s.start, s.end) : 0), 0))}</span>
+                {grid[di].some((s) => s.on && !s.locked) && (
+                  <button type="button" className="small" onClick={() => setGrid((g) => g.map((row, i) => (i !== di ? row : row.map((s) => (s.locked ? s : { ...s, on: false })))))}
+                    style={{ minHeight: 36, padding: '0 10px', borderRadius: 99, border: '1.5px solid #B9A28E', background: 'transparent', color: 'var(--suave)', fontWeight: 700, cursor: 'pointer' }}>
+                    Día libre
+                  </button>
+                )}
+                {grid[di].every((s) => !s.on) && d.slots.length > 0 && <span className="pill low">Libre</span>}
               </span>
             </div>
             {d.slots.length === 0 && <div className="small muted">Este día no hay turnos.</div>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
               {grid[di].map((s, si) => (
-                <fieldset key={s.template} disabled={s.locked} style={{
-                  border: s.on ? '2px solid var(--espresso)' : '2px dashed #C9B49F', borderRadius: 12, padding: '8px 10px', margin: 0,
-                  background: s.on ? '#fff' : 'transparent', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                <div key={s.template} style={{
+                  border: s.on ? '2px solid var(--espresso)' : '2px dashed #C9B49F', borderRadius: 12, padding: '8px 10px',
+                  background: s.on ? '#fff' : 'transparent', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minHeight: 60,
                 }}>
-                  <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, color: 'var(--tinta)', minHeight: 44, minWidth: 90 }}>
-                    <input type="checkbox" checked={s.on} onChange={(e) => set(di, si, { on: e.target.checked })}
-                      style={{ minHeight: 0, width: 22, height: 22 }} />
-                    {s.name}
-                  </label>
-                  {s.on && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="time" aria-label={`${d.title} ${s.name} entrada`} value={s.start} onChange={(e) => set(di, si, { start: e.target.value })}
-                        style={{ minHeight: 40, padding: '4px 6px', width: 108 }} />
-                      <span aria-hidden="true">–</span>
-                      <input type="time" aria-label={`${d.title} ${s.name} salida`} value={s.end} onChange={(e) => set(di, si, { end: e.target.value })}
-                        style={{ minHeight: 40, padding: '4px 6px', width: 108 }} />
-                    </span>
-                  )}
-                  {s.locked && <span className="small muted">Fichado: no se cambia</span>}
-                  {s.on && !s.locked && (s.start !== s.defStart || s.end !== s.defEnd) && (
-                    <button type="button" className="small" onClick={() => set(di, si, { start: s.defStart, end: s.defEnd })}
-                      style={{ background: 'none', border: 0, textDecoration: 'underline', color: 'var(--suave)', cursor: 'pointer', minHeight: 36 }}>
-                      Horario de siempre
+                  {!s.on ? (
+                    <button type="button" disabled={s.locked} onClick={() => set(di, si, { on: true })}
+                      style={{ flex: 1, minHeight: 44, border: 0, background: 'transparent', color: 'var(--suave)', fontWeight: 700, fontSize: 15, cursor: 'pointer', textAlign: 'left' }}>
+                      + Poner {s.name}
                     </button>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 700, minWidth: 64 }}>{s.name}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input type="time" disabled={s.locked} aria-label={`${d.title} ${s.name} entrada`} value={s.start}
+                          onChange={(e) => set(di, si, { start: e.target.value })} style={{ minHeight: 40, padding: '4px 6px', width: 108 }} />
+                        <span aria-hidden="true">–</span>
+                        <input type="time" disabled={s.locked} aria-label={`${d.title} ${s.name} salida`} value={s.end}
+                          onChange={(e) => set(di, si, { end: e.target.value })} style={{ minHeight: 40, padding: '4px 6px', width: 108 }} />
+                      </span>
+                      {s.locked ? (
+                        <span className="small muted">Fichado: no se cambia</span>
+                      ) : (
+                        <span style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                          {(s.start !== s.defStart || s.end !== s.defEnd) && (
+                            <button type="button" className="small" title="Volver al horario de siempre" onClick={() => set(di, si, { start: s.defStart, end: s.defEnd })}
+                              style={{ background: 'none', border: 0, textDecoration: 'underline', color: 'var(--suave)', cursor: 'pointer', minHeight: 40 }}>
+                              Horario de siempre
+                            </button>
+                          )}
+                          <button type="button" onClick={() => set(di, si, { on: false })} aria-label={`Quitar ${s.name} del ${d.title}`}
+                            style={{ minHeight: 40, padding: '0 10px', borderRadius: 10, border: '1.5px solid var(--terracota)', background: 'transparent', color: 'var(--terracota)', fontWeight: 700, cursor: 'pointer' }}>
+                            ✕ Quitar
+                          </button>
+                        </span>
+                      )}
+                    </>
                   )}
-                </fieldset>
+                </div>
               ))}
             </div>
           </div>
@@ -129,7 +148,7 @@ export function WeekEditor({ userId, name, days, contractMinutes, extraMinutes =
 
       {state?.error && <div className="alert err" role="alert">{state.error}</div>}
       {state?.ok && <div className="alert ok" role="status">{state.ok}</div>}
-      <div className="btn-row" style={{ position: 'sticky', bottom: 84, zIndex: 2 }}>
+      <div className="btn-row save-bar">
         <button type="button" className="btn ghost" disabled={!dirty || pending} onClick={() => setGrid(initial)}>Deshacer cambios</button>
         <button className="btn" disabled={!dirty || pending}>
           {pending ? 'Guardando…' : !dirty ? 'Sin cambios' : mode === 'usual' ? 'Guardar horario habitual' : `Guardar semana (${changes.length})`}
