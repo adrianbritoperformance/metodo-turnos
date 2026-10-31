@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useTransition, useState } from 'react';
-import { addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveShift, setOpening, setStock, voidPunchForm } from './actions';
+import { addAbsence, addNotice, addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveShift, setOpening, setStock, voidPunchForm } from './actions';
 
 type State = { error?: string; ok?: string } | undefined;
 
@@ -219,6 +219,82 @@ export function VoidPunchForm({ id, label }: { id: string; label: string }) {
         <button className="btn danger sm" disabled={pending}>Anular</button>
       </div>
       <Msg s={state} />
+    </form>
+  );
+}
+
+/** Marcar vacaciones, asuntos propios o baja (un día o un rango). */
+export function AbsenceForm({ people, day }: { people: { id: string; full_name: string }[]; day: string }) {
+  const [state, action, pending] = useActionState<State, FormData>(addAbsence, undefined);
+  return (
+    <form action={action} className="stack">
+      <div className="grid2">
+        <label>Persona
+          <select name="user_id" required defaultValue="">
+            <option value="" disabled>Elige</option>
+            {people.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+        </label>
+        <label>Tipo
+          <select name="kind" required defaultValue="vacaciones">
+            <option value="vacaciones">Vacaciones</option>
+            <option value="asuntos">Asuntos propios</option>
+            <option value="baja">Baja</option>
+          </select>
+        </label>
+      </div>
+      <div className="grid2">
+        <label>Desde<input type="date" name="start" defaultValue={day} required /></label>
+        <label>Hasta (incluido)<input type="date" name="end" defaultValue={day} required /></label>
+      </div>
+      <label>Nota (opcional)<input name="note" placeholder="Por ejemplo: aprobado por Pepe" /></label>
+      <Msg s={state} />
+      <button className="btn" disabled={pending}>Guardar ausencia</button>
+    </form>
+  );
+}
+
+/** Mensaje o tarea para un día: a una persona, a varias o a todo el equipo. */
+export function NoticeForm({ people, day }: { people: { id: string; full_name: string }[]; day: string }) {
+  const [state, action, pending] = useActionState<State, FormData>(addNotice, undefined);
+  const [to, setTo] = useState<'all' | 'some'>('all');
+  return (
+    <form action={action} className="stack">
+      <div className="grid2">
+        <label>Tipo
+          <select name="kind" defaultValue="mensaje">
+            <option value="mensaje">Mensaje</option>
+            <option value="tarea">Tarea (se marca como hecha)</option>
+          </select>
+        </label>
+        <label>Día<input type="date" name="day" defaultValue={day} required /></label>
+      </div>
+      <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 6 }}>Para</legend>
+        <div className="btn-row">
+          <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)' }}>
+            <input type="radio" name="to" value="all" checked={to === 'all'} onChange={() => setTo('all')} style={{ minHeight: 0, width: 20, height: 20 }} />
+            Todo el equipo
+          </label>
+          <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)' }}>
+            <input type="radio" name="to" value="some" checked={to === 'some'} onChange={() => setTo('some')} style={{ minHeight: 0, width: 20, height: 20 }} />
+            Personas concretas
+          </label>
+        </div>
+        {to === 'some' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+            {people.map((p) => (
+              <label key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 }}>
+                <input type="checkbox" name="user_ids" value={p.id} style={{ minHeight: 0, width: 20, height: 20 }} />
+                {p.full_name}
+              </label>
+            ))}
+          </div>
+        )}
+      </fieldset>
+      <label>Texto<textarea name="body" required placeholder="Por ejemplo: hoy llega el pedido de leche, colocarlo en la cámara" /></label>
+      <Msg s={state} />
+      <button className="btn" disabled={pending}>Guardar</button>
     </form>
   );
 }

@@ -5,6 +5,7 @@ import { requireOwner } from '@/lib/supabase';
 import { addDays, fmtDay, fmtHours, fmtMinutes, fmtRange, fmtTime, madridMidnight, monthOnly, payMonthOf, payPeriod, shiftMonth, ymd } from '@/lib/time';
 import { getPayStartDay, type Closing } from '@/lib/period';
 import { ClosePeriodForm, OpeningForm, VoidPunchForm } from '../Forms';
+import { ABSENCE, loadAbsences, type AbsenceKind } from '@/lib/absences';
 import { reviewCorrection, rotateQr, saveTemplates, setContract, setMember, setPayStartDay, shiftFromPunches } from '../actions';
 
 export const dynamic = 'force-dynamic';
@@ -56,6 +57,20 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
     return { p, b, closing, carriedIn, total: carriedIn + b.balance_minutes };
   });
   const finished = madridMidnight(addDays(end, 1)).getTime() <= Date.now();
+
+  // Días de ausencia dentro del periodo, por persona y tipo (solo informativo)
+  const periodAbs = await loadAbsences(sb, start, end);
+  const absDays = (userId: string) => {
+    const out: Partial<Record<AbsenceKind, number>> = {};
+    for (const a of periodAbs.filter((x) => x.user_id === userId)) {
+      const lo = a.start_date < start ? start : a.start_date;
+      const hi = a.end_date > end ? end : a.end_date;
+      let n = 0;
+      for (let d = lo; d <= hi; d = addDays(d, 1)) n++;
+      out[a.kind] = (out[a.kind] ?? 0) + n;
+    }
+    return (Object.keys(out) as AbsenceKind[]).map((k) => `${out[k]} ${out[k] === 1 ? 'día' : 'días'} de ${ABSENCE[k].label.toLowerCase()}`).join(' · ');
+  };
 
   // Fichajes sin turno, agrupados por persona y día
   type Orphan = { id: string; user_id: string; kind: 'in' | 'out'; at: string; profiles: { full_name: string } | null };
@@ -139,6 +154,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                 <div className="muted small">
                   {p.weekly_hours} h/sem · {fmtHours(b.worked_minutes)} de {fmtHours(b.contract_minutes)}
                 </div>
+                {absDays(p.id) && <div className="small" style={{ color: '#1E4E79' }}>{absDays(p.id)}</div>}
                 {closing
                   ? <span className={`pill ${closing.worker_status === 'agree' ? 'ok' : closing.worker_status === 'disagree' ? 'out' : 'low'}`} style={{ marginTop: 4 }}>
                       {closing.worker_status === 'agree' ? 'Cerrada · conforme' : closing.worker_status === 'disagree' ? 'Cerrada · NO conforme' : 'Cerrada · esperando respuesta'}

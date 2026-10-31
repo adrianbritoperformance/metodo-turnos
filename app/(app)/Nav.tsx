@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const ic = {
+  inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   fichar: 'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8zM13 13h3v3',
   horas: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   turnos: 'M8 3v3M16 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z',
@@ -13,24 +14,26 @@ const ic = {
 
 export function Nav({ owner }: { owner: boolean }) {
   const path = usePathname();
-  const items: [string, string, keyof typeof ic][] = [
-    ['/', 'Fichar', 'fichar'],
-    ['/horas', 'Horas', 'horas'],
-    ['/turnos', 'Turnos', 'turnos'],
-    ['/reponer', 'Reponer', 'reponer'],
+  // [ruta, nombre largo (ordenador), nombre corto (móvil), icono]
+  const items: [string, string, string, keyof typeof ic][] = [
+    ['/', 'Inicio', 'Inicio', 'inicio'],
+    ['/horas', 'Horas y bolsa de horas', 'Horas', 'horas'],
+    ['/turnos', 'Turnos y calendario', 'Turnos', 'turnos'],
+    ['/reponer', 'Reponer', 'Reponer', 'reponer'],
   ];
-  if (owner) items.push(['/admin', 'Gestión', 'admin']);
+  if (owner) items.push(['/admin', 'Gestión', 'Gestión', 'admin']);
   return (
     <nav className="nav" aria-label="Secciones">
       <div className="in">
-        {items.map(([href, label, icon]) => {
-          const on = href === '/' ? path === '/' : path.startsWith(href);
+        {items.map(([href, label, shortLabel, icon]) => {
+          const on = href === '/' ? path === '/' || path.startsWith('/fichar') : path.startsWith(href);
           return (
             <Link key={href} href={href} className={on ? 'on' : ''} aria-current={on ? 'page' : undefined}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d={ic[icon]} />
               </svg>
-              {label}
+              <span className="lbl-long">{label}</span>
+              <span className="lbl-short">{shortLabel}</span>
             </Link>
           );
         })}

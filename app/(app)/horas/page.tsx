@@ -45,7 +45,7 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
 
   return (
     <>
-      <h1>Bolsa de horas</h1>
+      <h1>Horas y bolsa de horas</h1>
       <div className="btn-row" style={{ alignItems: 'center' }}>
         <Link className="btn ghost sm" href={`/horas?m=${shiftMonth(month, -1)}`} style={{ flex: '0 0 auto' }} aria-label="Nómina anterior">‹</Link>
         <div style={{ textAlign: 'center' }}>

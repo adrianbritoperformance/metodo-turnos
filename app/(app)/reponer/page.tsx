@@ -63,12 +63,13 @@ export default async function Reponer() {
               <div className="eyebrow">Para el próximo pedido</div>
               <div className="big" style={{ fontSize: 22 }}>{toOrder.length} {toOrder.length === 1 ? 'producto' : 'productos'}</div>
             </div>
-            {owner && toOrder.length > 0 && (
-              <form action={markOrdered}>
-                <button className="btn soft sm">Pedido hecho</button>
-              </form>
-            )}
           </div>
+          {owner && items.some((i) => i.status === 2) && (
+            <form action={markOrdered} className="card" style={{ gap: 8 }}>
+              <button className="btn">Repuesto</button>
+              <div className="small muted">Lo que falta pasa a “Hay”. Lo que queda poco se mantiene hasta que alguien lo cambie.</div>
+            </form>
+          )}
 
           {toOrder.length > 0 && (
             <div className="card" style={{ gap: 10 }}>

@@ -18,7 +18,7 @@ La lógica está en las vistas `shift_balance` y `week_balance` (`supabase/02_co
 
 ### 1. Supabase (base de datos y usuarios)
 1. supabase.com → **New project** (región: Europe West / Frankfurt). Guarda la contraseña de la base de datos.
-2. Menú **SQL Editor** → New query → pega todo `supabase/schema.sql` → **Run**. Después, en queries nuevas y en este orden: `02_contrato.sql`, `03_plantillas.sql`, `04_colores_y_horarios.sql`, `05_control.sql`, `06_solapes.sql` y `07_reponer.sql` (carpeta `supabase`) → **Run** cada una.
+2. Menú **SQL Editor** → New query → pega todo `supabase/schema.sql` → **Run**. Después, en queries nuevas y en este orden: `02_contrato.sql`, `03_plantillas.sql`, `04_colores_y_horarios.sql`, `05_control.sql`, `06_solapes.sql`, `07_reponer.sql`, `08_ausencias.sql` y `09_avisos.sql` (carpeta `supabase`) → **Run** cada una.
    - Crea el local "Método Café" con el código de alta **METODO2026** (puedes cambiarlo en la última parte del archivo antes de ejecutarlo).
 3. **Authentication → Sign In / Providers → Email**: para pruebas, desactiva **Confirm email** (así no hay que confirmar por correo). Se puede volver a activar después.
 4. **Project Settings → API**: copia `Project URL` y la clave `anon public`.

@@ -157,12 +157,12 @@ export async function deleteStock(fd: FormData) {
   revalidatePath('/reponer');
 }
 
-/** Pedido hecho: todo lo marcado vuelve a "Hay". */
+/** Repuesto: lo que faltaba vuelve a "Hay"; lo que quedaba poco se queda igual. */
 export async function markOrdered() {
   const { sb, profile } = await requireOwner();
   await sb.from('stock_items')
     .update({ status: 0, updated_by: profile.id, updated_at: new Date().toISOString() })
-    .eq('business_id', profile.business_id).gt('status', 0);
+    .eq('business_id', profile.business_id).eq('status', 2);
   revalidatePath('/reponer');
 }
 
@@ -279,4 +279,59 @@ export async function voidPunch(id: string, reason: string) {
 
 export async function voidPunchForm(_: unknown, fd: FormData) {
   return voidPunch(String(fd.get('id')), String(fd.get('reason') ?? ''));
+}
+
+/* ---------------- Ausencias (solo informativas) ---------------- */
+
+export async function addAbsence(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireOwner();
+  const kind = String(fd.get('kind') ?? '');
+  const start = String(fd.get('start') ?? '');
+  const end = String(fd.get('end') ?? '') || start;
+  if (!['vacaciones', 'asuntos', 'baja'].includes(kind)) return { error: 'Elige el tipo.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) return { error: 'Revisa las fechas.' };
+  const { error } = await sb.from('absences').insert({
+    business_id: profile.business_id, user_id: String(fd.get('user_id')), kind,
+    start_date: start, end_date: end, note: String(fd.get('note') ?? '').trim() || null, created_by: profile.id,
+  });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: 'Ausencia guardada.' };
+}
+
+export async function deleteAbsence(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.from('absences').delete().eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
+/* ---------------- Avisos y tareas ---------------- */
+
+export async function addNotice(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireOwner();
+  const kind = fd.get('kind') === 'tarea' ? 'tarea' : 'mensaje';
+  const body = String(fd.get('body') ?? '').trim();
+  const day = String(fd.get('day') ?? '');
+  const toAll = fd.get('to') === 'all';
+  const ids = toAll ? [] : fd.getAll('user_ids').map(String).filter(Boolean);
+  if (!body) return { error: 'Escribe el mensaje.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'Elige el día.' };
+  if (!toAll && ids.length === 0) return { error: 'Elige al menos una persona o “Todo el equipo”.' };
+  const { error } = await sb.from('notices').insert({ business_id: profile.business_id, day, kind, body, user_ids: ids, created_by: profile.id });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: kind === 'tarea' ? 'Tarea guardada.' : 'Mensaje guardado.' };
+}
+
+export async function deleteNotice(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.from('notices').delete().eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
+export async function setNoticeDone(id: string, done: boolean) {
+  const { sb } = await requireProfile();
+  const { error } = await sb.rpc('set_notice_done', { p_id: id, p_done: done });
+  revalidatePath('/', 'layout');
+  return error ? { error: 'No se ha podido guardar.' } : {};
 }

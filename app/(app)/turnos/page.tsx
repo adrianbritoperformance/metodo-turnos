@@ -1,14 +1,19 @@
 import Link from 'next/link';
 import { requireProfile } from '@/lib/supabase';
 import {
-  addDays, dayRange, fmtHours, fmtLongDay, fmtTime, fmtWeek, madridMidnight, monthName, monthRange,
+  addDays, fmtHours, fmtLongDay, fmtTime, fmtWeek, madridMidnight, monthName, monthRange,
   mondayOf, shiftMonth, ymd,
 } from '@/lib/time';
 import { ShiftForm } from '../Forms';
 import { copyWeek, deleteShift } from '../actions';
 import { TemplateToggle } from './Toggle';
 import { MonthCalendar, type CalPerson } from './MonthCalendar';
-import { ClearWeekForm } from '../Forms';
+import { AbsenceForm, ClearWeekForm, NoticeForm } from '../Forms';
+import { NoticeList } from '../NoticeList';
+import { loadNotices } from '@/lib/notices';
+import { deleteAbsence } from '../actions';
+import { DaySlots } from './DaySlots';
+import { ABSENCE, absentOn, loadAbsences } from '@/lib/absences';
 import { colorOf } from '@/lib/colors';
 
 export const dynamic = 'force-dynamic';
@@ -54,6 +59,10 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
   ]);
   const calPeople = calendarPeople(profs);
   const colorById = new Map(calPeople.map((p) => [p.id, p.color]));
+  const gridFrom = mondayOf(`${month}-01`);
+  const [absences, dayNotices] = await Promise.all([loadAbsences(sb, gridFrom, addDays(gridFrom, 41)), loadNotices(sb, day)]);
+  const todayAway = absentOn(absences, day);
+  const nameById = new Map(((profs ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]));
   const shifts = (monthShifts ?? []) as unknown as Row[];
   const allTemplates = (tpls ?? []) as Tpl[];
   const templates = allTemplates.filter((t) => t.weekdays.includes(isoDow(day)));
@@ -74,11 +83,11 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
 
   return (
     <>
-      <h1>Cuadrante</h1>
+      <h1>Turnos y calendario</h1>
 
       <div className="cols">
         <div className="col sticky">
-      <MonthCalendar month={month} day={day} shifts={shifts} people={calPeople} />
+      <MonthCalendar month={month} day={day} shifts={shifts} people={calPeople} absences={absences} />
 
       {/* ---- Semana ---- */}
       <h2>Semana {fmtWeek(mon)}</h2>
@@ -135,7 +144,13 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
                   {p.full_name}{p.user_id === me ? ' (tú)' : ''}
                 </span>
                 {extra.length > 0 && <span className="small muted">+ {extra.map((s) => `${fmtTime(s.starts_at)}–${fmtTime(s.ends_at)}`).join(', ')}</span>}
+                {absentOn(todayAway, day, p.user_id).map((a) => (
+                  <span key={a.id} className="pill" style={{ background: ABSENCE[a.kind].bg, color: ABSENCE[a.kind].fg }}>{ABSENCE[a.kind].label}</span>
+                ))}
               </div>
+              {absentOn(todayAway, day, p.user_id).length > 0 && mine.length > 0 && (
+                <div className="alert err small">Tiene turno puesto y está marcada como ausente este día. Quita el turno si no viene.</div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 {templates.map((t) => {
                   const s = mine.find((x) => x.template_id === t.id);
@@ -154,6 +169,41 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
       <p className="small muted" style={{ margin: 0 }}>
         Un toque pone el turno con su horario de siempre; otro lo quita. En amarillo, los que tienen horas cambiadas.
       </p>
+
+      {/* ---- Mensajes y tareas del día ---- */}
+      <h2>Mensajes y tareas de este día</h2>
+      <NoticeList notices={dayNotices} nameById={nameById} owner empty="No hay mensajes ni tareas para este día." />
+      <details className="card">
+        <summary className="btn soft">+ Mensaje o tarea</summary>
+        <div style={{ marginTop: 12 }}><NoticeForm people={team} day={day} /></div>
+      </details>
+
+      {/* ---- Ausencias ---- */}
+      {todayAway.length > 0 && (
+        <div className="list">
+          <div className="row" style={{ background: 'var(--papel)' }}><span className="eyebrow">Ausencias este día</span></div>
+          {todayAway.map((a) => (
+            <form key={a.id} action={deleteAbsence} className="row" style={{ gap: 8 }}>
+              <input type="hidden" name="id" value={a.id} />
+              <div>
+                <div className="t">{team.find((t) => t.id === a.user_id)?.full_name ?? '—'} · {ABSENCE[a.kind].label}</div>
+                <div className="small muted">
+                  {a.start_date === a.end_date ? 'Solo este día' : `Del ${Number(a.start_date.slice(8))}/${Number(a.start_date.slice(5, 7))} al ${Number(a.end_date.slice(8))}/${Number(a.end_date.slice(5, 7))}`}
+                  {a.note ? ` · ${a.note}` : ''}
+                </div>
+              </div>
+              <button className="btn danger sm" aria-label="Quitar ausencia">Quitar</button>
+            </form>
+          ))}
+        </div>
+      )}
+      <details className="card">
+        <summary className="btn ghost">+ Vacaciones, asuntos propios o baja</summary>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="small muted">Es solo informativo: se ve en el calendario y en la nómina, pero no cambia las horas.</div>
+          <AbsenceForm people={team} day={day} />
+        </div>
+      </details>
 
       {/* ---- Ajustes finos del día ---- */}
       {dayShifts.length > 0 && (
@@ -203,46 +253,43 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
 async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) {
   const month = day.slice(0, 7);
   const { from: mFrom, to: mTo } = monthRange(month);
-  const [{ data }, { data: profs }] = await Promise.all([
+  const gridFrom = mondayOf(`${month}-01`);
+  const [{ data }, { data: profs }, absences, dayNotices] = await Promise.all([
     sb.from('shifts')
       .select('id, user_id, starts_at, ends_at, label, note, changed_at, template_id, profiles(full_name)')
       .gte('starts_at', mFrom).lt('starts_at', mTo).order('starts_at'),
     sb.from('profiles').select('id, full_name, color, active').order('full_name'),
+    loadAbsences(sb, gridFrom, addDays(gridFrom, 41)),
+    loadNotices(sb, day),
   ]);
   const all = (data ?? []) as unknown as Row[];
   const calPeople = calendarPeople(profs);
   const colorById = new Map(calPeople.map((p) => [p.id, p.color]));
+  const nameById = new Map(((profs ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]));
   const rows = all.filter((r) => ymd(r.starts_at) === day);
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Turnos</h1>
+        <h1>Turnos y calendario</h1>
         <Link className="btn ghost sm" href="/turnos">Hoy</Link>
       </div>
 
-      <MonthCalendar month={month} day={day} shifts={all} people={calPeople} />
-
-      <h2>{fmtLongDay(madridMidnight(day))}</h2>
-      {rows.length === 0 && <div className="card"><div className="muted">No hay turnos este día.</div></div>}
-      {rows.map((r) => {
-        const mine = r.user_id === me;
-        const changed = r.changed_at && Date.now() - new Date(r.changed_at).getTime() < 48 * 3600e3;
-        return (
-          <div key={r.id} className={`card ${mine ? 'yellow' : ''}`}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 99, background: colorById.get(r.user_id) }} />
-                {r.profiles?.full_name ?? '—'}{mine ? ' (tú)' : ''}
-              </div>
-              <div style={{ fontFamily: 'var(--titulo)', fontWeight: 700 }}>{fmtTime(r.starts_at)}–{fmtTime(r.ends_at)}</div>
-            </div>
-            {r.label && <div className="muted">{r.label}</div>}
-            {r.note && <div style={{ fontSize: 14, whiteSpace: 'pre-line' }}>Tarea: {r.note}</div>}
-            {changed && <span className="pill out" style={{ alignSelf: 'flex-start' }}>Cambiado recientemente</span>}
-          </div>
-        );
-      })}
+      <div className="cols">
+        <div className="col sticky">
+          <MonthCalendar month={month} day={day} shifts={all} people={calPeople} absences={absences} />
+        </div>
+        <div className="col">
+          <h2>{fmtLongDay(madridMidnight(day))}</h2>
+          {dayNotices.length > 0 && (
+            <>
+              <div className="eyebrow" style={{ marginTop: 4 }}>Mensajes y tareas</div>
+              <NoticeList notices={dayNotices} nameById={nameById} />
+            </>
+          )}
+          <DaySlots rows={rows} me={me} colorById={colorById} nameById={nameById} absences={absentOn(absences, day)} />
+        </div>
+      </div>
     </>
   );
 }

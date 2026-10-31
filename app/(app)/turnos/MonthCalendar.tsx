@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { addDays, monthName, mondayOf, shiftMonth, ymd } from '@/lib/time';
+import { ABSENCE, type Absence } from '@/lib/absences';
 
 const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 const hourFmt = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', hour12: false });
@@ -10,10 +11,11 @@ export type CalPerson = { id: string; name: string; color: string };
  * Calendario del mes: cada día partido en dos, arriba la mañana y abajo la tarde,
  * con un punto del color de cada persona que trabaja en esa franja.
  */
-export function MonthCalendar({ month, day, shifts, people }: {
+export function MonthCalendar({ month, day, shifts, people, absences = [] }: {
   month: string; day: string;
   shifts: { user_id: string; starts_at: string }[];
   people: CalPerson[];
+  absences?: Absence[];
 }) {
   const color = new Map(people.map((p) => [p.id, p.color]));
   const name = new Map(people.map((p) => [p.id, p.name]));
@@ -56,7 +58,9 @@ export function MonthCalendar({ month, day, shifts, people }: {
           const inMonth = c.slice(0, 7) === month;
           const v = slots.get(c);
           const sel = c === day;
-          const label = `${Number(c.slice(8))}. Mañana: ${v?.am.map((i) => name.get(i)).join(', ') || 'nadie'}. Tarde: ${v?.pm.map((i) => name.get(i)).join(', ') || 'nadie'}`;
+          const away = absences.filter((a) => a.start_date <= c && a.end_date >= c && name.has(a.user_id));
+          const label = `${Number(c.slice(8))}. Mañana: ${v?.am.map((i) => name.get(i)).join(', ') || 'nadie'}. Tarde: ${v?.pm.map((i) => name.get(i)).join(', ') || 'nadie'}`
+            + (away.length ? `. Ausentes: ${away.map((a) => `${name.get(a.user_id)} (${ABSENCE[a.kind].label})`).join(', ')}` : '');
           return (
             <Link
               key={c}
@@ -76,12 +80,30 @@ export function MonthCalendar({ month, day, shifts, people }: {
               <Dots ids={v?.am ?? []} />
               <span style={{ height: 1, background: 'var(--linea)' }} />
               <span style={{ background: '#F3EBE1' }}><Dots ids={v?.pm ?? []} /></span>
+              {away.length > 0 && (
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', padding: '2px 1px', background: '#fff' }}>
+                  {away.map((a) => (
+                    <span key={a.id} title={`${name.get(a.user_id)} · ${ABSENCE[a.kind].label}`} className="cal-abs"
+                      style={{ background: ABSENCE[a.kind].bg, color: ABSENCE[a.kind].fg, borderColor: color.get(a.user_id) }}>
+                      {ABSENCE[a.kind].letter}
+                    </span>
+                  ))}
+                </span>
+              )}
             </Link>
           );
         })}
       </div>
 
       <div className="small muted">En cada día: arriba la mañana, abajo la tarde. Toca un día para verlo.</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+        {(Object.keys(ABSENCE) as (keyof typeof ABSENCE)[]).map((k) => (
+          <span key={k} className="small" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span className="cal-abs" aria-hidden="true" style={{ background: ABSENCE[k].bg, color: ABSENCE[k].fg, borderColor: ABSENCE[k].fg }}>{ABSENCE[k].letter}</span>
+            {ABSENCE[k].label}
+          </span>
+        ))}
+      </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
         {people.map((p) => (
           <span key={p.id} className="small" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>

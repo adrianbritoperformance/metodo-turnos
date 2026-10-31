@@ -77,6 +77,8 @@ textarea { min-height: 80px; }
 .nav .in { max-width: 520px; margin: 0 auto; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 .nav a { min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-decoration: none; font-size: 12px; color: #6B5446; }
 .nav a.on { color: var(--espresso); font-weight: 700; }
+.nav .lbl-long { display: none; }
+.nav .lbl-short { display: inline; }
 
 .alert { border-radius: 14px; padding: 12px 14px; font-size: 14px; }
 .alert.err { background: var(--terracota-bg); color: var(--terracota); }
@@ -103,6 +105,8 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
 .cal-dot { width: 7px; height: 7px; border-radius: 99px; display: block; }
 .cal-half { min-height: 18px; }
 .cal-num { font-size: 11px; line-height: 16px; }
+.cal-abs { font-size: 9px; font-weight: 700; line-height: 1; padding: 2px 3px; border-radius: 4px; border: 2px solid; display: inline-block; }
+.slot-head { display: flex; justify-content: space-between; align-items: center; }
 
 @media (min-width: 700px) {
   .app { max-width: 820px; }
@@ -112,6 +116,7 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
   .cal-dot { width: 11px; height: 11px; }
   .cal-half { min-height: 30px; gap: 3px !important; }
   .cal-num { font-size: 13px; line-height: 22px; }
+  .cal-abs { font-size: 11px; padding: 2px 4px; }
 }
 
 @media (min-width: 1000px) {
@@ -128,6 +133,8 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
   .nav a { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px; font-size: 15px; border-radius: 12px; min-height: 48px; }
   .nav a.on { background: var(--mantequilla); }
   .nav a:hover { background: #F3EBE1; }
+  .nav .lbl-long { display: inline; }
+  .nav .lbl-short { display: none; }
   .top img { width: 140px; }
 
   .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
