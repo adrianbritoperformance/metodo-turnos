@@ -374,3 +374,54 @@ export async function saSetPassword(_: unknown, fd: FormData) {
   const { error } = await sb.rpc('sa_set_password', { p_user: String(fd.get('user_id')), p_password: pw });
   return error ? { error: 'No se ha podido cambiar.' } : { ok: 'Contraseña temporal puesta. Pásasela y que la cambie en Mi perfil.' };
 }
+
+/* ---------------- Plantilla semanal por persona ---------------- */
+
+type Slot = { date: string; template: string; on: boolean; start: string; end: string; label: string };
+
+export async function saveWeekPlan(_: unknown, fd: FormData) {
+  const { sb } = await requireOwner();
+  const userId = String(fd.get('user_id') ?? '');
+  let slots: Slot[] = [];
+  try { slots = JSON.parse(String(fd.get('slots') ?? '[]')); } catch { return { error: 'Datos no válidos.' }; }
+  // Primero se quitan, luego se cambian/ponen: así no chocan mañana y tarde al mover horas.
+  slots.sort((a, b) => Number(a.on) - Number(b.on));
+  const errors: string[] = [];
+  let changed = 0;
+  for (const s of slots) {
+    if (s.on && (!/^\d{2}:\d{2}$/.test(s.start) || !/^\d{2}:\d{2}$/.test(s.end))) { errors.push(`${s.label}: revisa las horas`); continue; }
+    const { data, error } = await sb.rpc('set_slot', {
+      p_user: userId, p_date: s.date, p_template: s.template, p_on: s.on,
+      p_start: s.on ? s.start : null, p_end: s.on ? s.end : null,
+    });
+    if (error) {
+      errors.push(`${s.label}: ${/solapa/.test(error.message) ? 'se pisa con otro turno'
+        : /fichado/.test(error.message) ? 'ya está fichado y no se puede cambiar'
+        : /no existe ese día/.test(error.message) ? 'no hay ese turno ese día' : 'no se ha podido guardar'}`);
+    } else if (data !== 'sin cambios') changed++;
+  }
+  revalidatePath('/', 'layout');
+  if (errors.length) return { error: `Guardado a medias (${changed} cambios). No se pudo: ${errors.join(' · ')}` };
+  return { ok: changed ? `Semana guardada (${changed} ${changed === 1 ? 'cambio' : 'cambios'}).` : 'No había nada que cambiar.' };
+}
+
+/** Guarda el horario habitual completo de una persona (sustituye al anterior). */
+export async function saveUsual(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireOwner();
+  const userId = String(fd.get('user_id') ?? '');
+  let slots: { weekday: number; template: string; on: boolean; start: string; end: string }[] = [];
+  try { slots = JSON.parse(String(fd.get('slots') ?? '[]')); } catch { return { error: 'Datos no válidos.' }; }
+  const rows = slots.filter((s) => s.on).map((s) => ({
+    business_id: profile.business_id, user_id: userId, weekday: s.weekday, template_id: s.template,
+    start_time: s.start, end_time: s.end,
+  }));
+  if (rows.some((r) => !/^\d{2}:\d{2}$/.test(r.start_time) || !/^\d{2}:\d{2}$/.test(r.end_time))) return { error: 'Revisa las horas.' };
+  const del = await sb.from('usual_slots').delete().eq('user_id', userId);
+  if (del.error) return { error: 'No se ha podido guardar.' };
+  if (rows.length) {
+    const ins = await sb.from('usual_slots').insert(rows);
+    if (ins.error) return { error: 'No se ha podido guardar.' };
+  }
+  revalidatePath('/plantilla');
+  return { ok: 'Horario habitual guardado.' };
+}
