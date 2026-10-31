@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireOwner, requireProfile } from '@/lib/supabase';
+import { requireOwner, requireProfile, requireSuperadmin } from '@/lib/supabase';
 import { fmtTime, parseHours } from '@/lib/time';
 
 export type FicharResult =
@@ -317,10 +317,17 @@ export async function addNotice(_: unknown, fd: FormData) {
   if (!body) return { error: 'Escribe el mensaje.' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'Elige el día.' };
   if (!toAll && ids.length === 0) return { error: 'Elige al menos una persona o “Todo el equipo”.' };
-  const { error } = await sb.from('notices').insert({ business_id: profile.business_id, day, kind, body, user_ids: ids, created_by: profile.id });
+  const { data: saved, error } = await sb.from('notices')
+    .insert({ business_id: profile.business_id, day, kind, body, user_ids: ids, created_by: profile.id })
+    .select('user_ids').single();
   revalidatePath('/', 'layout');
-  if (error) return { error: 'No se ha podido guardar.' };
-  return { ok: kind === 'tarea' ? 'Tarea guardada.' : 'Mensaje guardado.' };
+  if (error || !saved) return { error: 'No se ha podido guardar.' };
+  let who = 'todo el equipo';
+  if ((saved.user_ids as string[]).length > 0) {
+    const { data: ppl } = await sb.from('profiles').select('full_name').in('id', saved.user_ids as string[]);
+    who = (ppl ?? []).map((p) => p.full_name.split(' ')[0]).join(', ');
+  }
+  return { ok: `${kind === 'tarea' ? 'Tarea' : 'Mensaje'} guardado para: ${who}.` };
 }
 
 export async function deleteNotice(fd: FormData) {
@@ -334,4 +341,36 @@ export async function setNoticeDone(id: string, done: boolean) {
   const { error } = await sb.rpc('set_notice_done', { p_id: id, p_done: done });
   revalidatePath('/', 'layout');
   return error ? { error: 'No se ha podido guardar.' } : {};
+}
+
+/* ---------------- Panel central (administrador de la plataforma) ---------------- */
+
+export async function saSetAccount(_: unknown, fd: FormData) {
+  const { sb } = await requireSuperadmin();
+  const { error } = await sb.rpc('sa_set_account', {
+    p_user: String(fd.get('user_id')),
+    p_role: fd.get('role') === 'owner' ? 'owner' : 'worker',
+    p_job_title: String(fd.get('job_title') ?? ''),
+    p_active: fd.get('active') === '1',
+  });
+  revalidatePath('/', 'layout');
+  return error ? { error: 'No se ha podido guardar.' } : { ok: 'Guardado.' };
+}
+
+export async function saCreateBusiness(_: unknown, fd: FormData) {
+  const { sb } = await requireSuperadmin();
+  const { error } = await sb.rpc('sa_create_business', {
+    p_name: String(fd.get('name') ?? ''), p_join_code: String(fd.get('join_code') ?? ''),
+  });
+  revalidatePath('/central');
+  if (error) return { error: /existe/.test(error.message) ? 'Ese código ya lo usa otro local.' : 'Rellena nombre y código.' };
+  return { ok: 'Local creado. La primera cuenta que se registre con ese código será su admin.' };
+}
+
+export async function saSetPassword(_: unknown, fd: FormData) {
+  const { sb } = await requireSuperadmin();
+  const pw = String(fd.get('password') ?? '');
+  if (pw.length < 6) return { error: 'Mínimo 6 caracteres.' };
+  const { error } = await sb.rpc('sa_set_password', { p_user: String(fd.get('user_id')), p_password: pw });
+  return error ? { error: 'No se ha podido cambiar.' } : { ok: 'Contraseña temporal puesta. Pásasela y que la cambie en Mi perfil.' };
 }

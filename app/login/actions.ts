@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { supabaseServer } from '@/lib/supabase';
 
 function safeNext(v: FormDataEntryValue | null) {
@@ -41,4 +42,29 @@ export async function logout() {
   const sb = await supabaseServer();
   await sb.auth.signOut();
   redirect('/login');
+}
+
+/** Paso 1: pedir el correo de recuperación. Siempre responde lo mismo (no revela si el correo existe). */
+export async function requestReset(_: unknown, fd: FormData) {
+  const email = String(fd.get('email') ?? '').trim();
+  if (!email) return { error: 'Escribe tu correo.' };
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const proto = h.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https');
+  const sb = await supabaseServer();
+  await sb.auth.resetPasswordForEmail(email, { redirectTo: `${proto}://${host}/auth/callback?next=/nueva-contrasena` });
+  return { ok: 'Si ese correo tiene cuenta, te llegará un enlace para poner una contraseña nueva. Mira también en spam.' };
+}
+
+/** Paso 2 (o desde Mi perfil): poner la contraseña nueva estando ya con sesión. */
+export async function updatePassword(_: unknown, fd: FormData) {
+  const pw = String(fd.get('password') ?? '');
+  const pw2 = String(fd.get('password2') ?? '');
+  if (pw.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres.' };
+  if (pw !== pw2) return { error: 'Las dos contraseñas no coinciden.' };
+  const sb = await supabaseServer();
+  const { error } = await sb.auth.updateUser({ password: pw });
+  if (error) return { error: /same|different/i.test(error.message) ? 'Tiene que ser distinta de la anterior.' : 'No se ha podido cambiar. Vuelve a pedir el enlace.' };
+  if (fd.get('redirect') === '1') redirect('/');
+  return { ok: 'Contraseña cambiada.' };
 }

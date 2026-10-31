@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const ic = {
+  plantilla: 'M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14',
+  central: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M11 16v4',
   inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   fichar: 'M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 8h3v3H8zM13 8h3v3h-3zM8 13h3v3H8zM13 13h3v3',
   horas: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
@@ -12,16 +14,18 @@ const ic = {
   admin: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z',
 };
 
-export function Nav({ owner }: { owner: boolean }) {
+export function Nav({ owner, superadmin = false }: { owner: boolean; superadmin?: boolean }) {
   const path = usePathname();
   // [ruta, nombre largo (ordenador), nombre corto (móvil), icono]
   const items: [string, string, string, keyof typeof ic][] = [
     ['/', 'Inicio', 'Inicio', 'inicio'],
-    ['/horas', 'Horas y bolsa de horas', 'Horas', 'horas'],
+    owner ? ['/horas', 'Bolsa de horas', 'Bolsa', 'horas'] : ['/horas', 'Horas y bolsa de horas', 'Horas', 'horas'],
     ['/turnos', 'Turnos y calendario', 'Turnos', 'turnos'],
+    ...(owner ? [['/plantilla', 'Plantilla', 'Plantilla', 'plantilla'] as [string, string, string, keyof typeof ic]] : []),
     ['/reponer', 'Reponer', 'Reponer', 'reponer'],
   ];
   if (owner) items.push(['/admin', 'Gestión', 'Gestión', 'admin']);
+  if (superadmin) items.push(['/central', 'Central', 'Central', 'central']);
   return (
     <nav className="nav" aria-label="Secciones">
       <div className="in">

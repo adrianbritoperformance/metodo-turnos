@@ -148,3 +148,5 @@ input[type=radio]:focus-visible + .swatch { outline: 3px solid var(--espresso); 
   .cols, .col { display: flex; flex-direction: column; gap: 14px; }
   .col.first-mobile { order: -1; }
 }
+
+@media (max-width: 420px) { .nav a { font-size: 11px; } }

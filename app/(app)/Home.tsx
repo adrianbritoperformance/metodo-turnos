@@ -35,7 +35,7 @@ export async function Home({ autoCode }: { autoCode?: string }) {
       .eq('user_id', profile.id).gte('starts_at', weekFrom).lt('starts_at', weekTo).order('starts_at'),
     loadAbsences(sb, today, addDays(today, 7)),
     loadNotices(sb, today),
-    sb.from('profiles').select('id, full_name, color, active').order('full_name'),
+    sb.from('profiles').select('id, full_name, color, active, role').order('full_name'),
   ]);
 
   const team = (teamToday ?? []) as unknown as Shift[];
@@ -43,10 +43,12 @@ export async function Home({ autoCode }: { autoCode?: string }) {
   const next = (upcoming ?? []) as unknown as Shift[];
   const myAbs = absences.filter((a) => a.user_id === profile.id);
   const awayToday = absentOn(myAbs, today)[0];
-  const allProfiles = (profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean }[];
+  const allProfiles = (profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean; role: string }[];
   const nameById = new Map(allProfiles.map((p) => [p.id, p.full_name]));
-  const colorById = new Map(allProfiles.filter((p) => p.active).map((p, i) => [p.id, colorOf(p.color, i)]));
+  const colorById = new Map(allProfiles.filter((p) => p.active && p.role === 'worker').map((p, i) => [p.id, colorOf(p.color, i)]));
   const myNotices = notices.filter((n) => n.user_ids.length === 0 || n.user_ids.includes(profile.id));
+  // Pendiente = mensajes de hoy + tareas sin hacer + tareas del turno
+  const pendingCount = myNotices.filter((n) => n.kind === 'mensaje' || !n.done_at).length + shifts.filter((s) => s.note).length;
 
   const nextKind: 'in' | 'out' = last?.[0]?.kind === 'in' ? 'out' : 'in';
   const recentlyChanged = (s: Shift) => s.changed_at && Date.now() - new Date(s.changed_at).getTime() < 48 * 3600e3;
@@ -71,9 +73,46 @@ export async function Home({ autoCode }: { autoCode?: string }) {
     };
   });
 
+  // Admins (dueños): no fichan ni tienen horas propias; su Inicio es el estado del equipo.
+  if (owner) {
+    return (
+      <>
+        <h1>Hola, {firstName}</h1>
+        <div className="cols">
+          <div className="col">
+            <OwnerToday sb={sb} today={today} absences={absentOn(absences, today)} notices={notices} nameById={nameById} />
+          </div>
+          <div className="col">
+            <h2>Quién está hoy</h2>
+            <DaySlots rows={team} me={profile.id} colorById={colorById} nameById={nameById} absences={absentOn(absences, today)} />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Fichar va abajo del todo; si se llega escaneando el QR con la cámara del móvil, va arriba para ver el resultado.
+  const fichar = (
+      <section id="fichar" aria-label="Fichar" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8, width: '100%', maxWidth: 720 }}>
+        <h2>Fichar</h2>
+        {last?.[0] && Date.now() - new Date(last[0].created_at).getTime() < 10 * 60e3 && (
+          <div className="card">
+            <div className="muted">{last[0].kind === 'in' ? 'Entrada' : 'Salida'} fichada a las <b>{fmtTime(last[0].at)}</b>.</div>
+            <VoidRecent id={last[0].id} />
+          </div>
+        )}
+        {last?.[0]?.kind === 'in' && Date.now() - new Date(last[0].created_at).getTime() >= 10 * 60e3 && (
+          <div className="muted">Entrada fichada a las <b>{fmtTime(last[0].at)}</b>.</div>
+        )}
+
+        <Scanner nextKind={nextKind} autoCode={autoCode} />
+      </section>
+  );
+
   return (
     <>
       <h1>Hola, {firstName}</h1>
+      {autoCode && fichar}
       <div className="cols">
         {/* ================= Lo mío de hoy ================= */}
         <div className="col">
@@ -106,30 +145,21 @@ export async function Home({ autoCode }: { autoCode?: string }) {
             </div>
           )}
 
-          {(myNotices.length > 0 || shifts.some((s) => s.note)) && (
-            <>
-              <h2>Mensajes y tareas de hoy</h2>
-              <NoticeList notices={myNotices} nameById={nameById} />
-              {shifts.filter((s) => s.note).map((s) => (
-                <div key={s.id + 'n'} className="card">
-                  <span className="pill low" style={{ alignSelf: 'flex-start' }}>Tarea del turno</span>
-                  <div style={{ fontSize: 15, whiteSpace: 'pre-line' }}>{s.note}</div>
-                </div>
-              ))}
-            </>
-          )}
-
-          {last?.[0] && Date.now() - new Date(last[0].created_at).getTime() < 10 * 60e3 && (
-            <div className="card">
-              <div className="muted">{last[0].kind === 'in' ? 'Entrada' : 'Salida'} fichada a las <b>{fmtTime(last[0].at)}</b>.</div>
-              <VoidRecent id={last[0].id} />
+          <h2>Mensajes y tareas de hoy</h2>
+          {pendingCount === 0 && (
+            <div className="card" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--verde)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+              <div className="muted">No tienes mensajes ni tareas pendientes.</div>
             </div>
           )}
-          {last?.[0]?.kind === 'in' && Date.now() - new Date(last[0].created_at).getTime() >= 10 * 60e3 && (
-            <div className="muted">Entrada fichada a las <b>{fmtTime(last[0].at)}</b>.</div>
-          )}
+          <NoticeList notices={myNotices} nameById={nameById} />
+          {shifts.filter((s) => s.note).map((s) => (
+            <div key={s.id + 'n'} className="card">
+              <span className="pill low" style={{ alignSelf: 'flex-start' }}>Tarea del turno</span>
+              <div style={{ fontSize: 15, whiteSpace: 'pre-line' }}>{s.note}</div>
+            </div>
+          ))}
 
-          <Scanner nextKind={nextKind} autoCode={autoCode} />
 
           <h2>Tus próximos días</h2>
           {nextDays.length === 0 && <div className="card"><div className="muted">No tienes más turnos esta semana.</div></div>}
@@ -154,12 +184,13 @@ export async function Home({ autoCode }: { autoCode?: string }) {
 
         {/* ================= El equipo hoy ================= */}
         <div className="col">
-          {owner && <OwnerToday sb={sb} today={today} absences={absentOn(absences, today)} notices={notices} nameById={nameById} />}
 
-          <h2>{owner ? 'Quién está hoy' : 'Quién trabaja contigo hoy'}</h2>
-          <DaySlots rows={team} me={profile.id} colorById={colorById} nameById={nameById} absences={absentOn(absences, today)} />
+          <h2>Quién trabaja contigo hoy</h2>
+          <DaySlots rows={team} me={profile.id} colorById={colorById} nameById={nameById} absences={[]} />
         </div>
       </div>
+
+      {!autoCode && fichar}
     </>
   );
 }
@@ -181,7 +212,7 @@ async function OwnerToday({ sb, today, absences, notices, nameById }: {
     sb.from('punches').select('id', { count: 'exact', head: true }).is('shift_id', null).is('voided_at', null)
       .gte('at', new Date(Date.now() - 62 * 86400e3).toISOString()),
     sb.from('pay_closings').select('user_id, worker_status').eq('period_month', `${prevMonth}-01`),
-    sb.from('profiles').select('id').eq('active', true),
+    sb.from('profiles').select('id').eq('active', true).eq('role', 'worker'),
   ]);
 
   const now = Date.now();

@@ -257,7 +257,11 @@ export function AbsenceForm({ people, day }: { people: { id: string; full_name: 
 /** Mensaje o tarea para un día: a una persona, a varias o a todo el equipo. */
 export function NoticeForm({ people, day }: { people: { id: string; full_name: string }[]; day: string }) {
   const [state, action, pending] = useActionState<State, FormData>(addNotice, undefined);
-  const [to, setTo] = useState<'all' | 'some'>('all');
+  const [picked, setPicked] = useState<string[]>([]);
+  const all = picked.length === 0;
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const who = all ? 'todo el equipo' : people.filter((p) => picked.includes(p.id)).map((p) => p.full_name.split(' ')[0]).join(', ');
+  const box = { flexDirection: 'row' as const, alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 };
   return (
     <form action={action} className="stack">
       <div className="grid2">
@@ -269,30 +273,25 @@ export function NoticeForm({ people, day }: { people: { id: string; full_name: s
         </label>
         <label>Día<input type="date" name="day" defaultValue={day} required /></label>
       </div>
-      <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 6 }}>Para</legend>
-        <div className="btn-row">
-          <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)' }}>
-            <input type="radio" name="to" value="all" checked={to === 'all'} onChange={() => setTo('all')} style={{ minHeight: 0, width: 20, height: 20 }} />
-            Todo el equipo
-          </label>
-          <label style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)' }}>
-            <input type="radio" name="to" value="some" checked={to === 'some'} onChange={() => setTo('some')} style={{ minHeight: 0, width: 20, height: 20 }} />
-            Personas concretas
-          </label>
+        <label style={box}>
+          <input type="checkbox" checked={all} onChange={() => setPicked([])} style={{ minHeight: 0, width: 20, height: 20 }} />
+          <b>Todo el equipo</b>
+        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
+          {people.map((p) => (
+            <label key={p.id} style={box}>
+              <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} style={{ minHeight: 0, width: 20, height: 20 }} />
+              {p.full_name}
+            </label>
+          ))}
         </div>
-        {to === 'some' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
-            {people.map((p) => (
-              <label key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 }}>
-                <input type="checkbox" name="user_ids" value={p.id} style={{ minHeight: 0, width: 20, height: 20 }} />
-                {p.full_name}
-              </label>
-            ))}
-          </div>
-        )}
+        <input type="hidden" name="to" value={all ? 'all' : 'some'} />
+        {picked.map((id) => <input key={id} type="hidden" name="user_ids" value={id} />)}
       </fieldset>
       <label>Texto<textarea name="body" required placeholder="Por ejemplo: hoy llega el pedido de leche, colocarlo en la cámara" /></label>
+      <div className="small" style={{ color: 'var(--suave)' }}>Lo verá: <b>{who}</b></div>
       <Msg s={state} />
       <button className="btn" disabled={pending}>Guardar</button>
     </form>

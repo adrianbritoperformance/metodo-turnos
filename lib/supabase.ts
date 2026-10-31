@@ -47,3 +47,11 @@ export async function requireOwner() {
   if (ctx.profile.role !== 'owner') redirect('/');
   return ctx;
 }
+
+/** Solo el administrador central de la plataforma (Adrián). */
+export async function requireSuperadmin() {
+  const ctx = await requireProfile();
+  const { data } = await ctx.sb.rpc('is_superadmin');
+  if (!data) redirect('/');
+  return ctx;
+}

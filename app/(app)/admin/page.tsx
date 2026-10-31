@@ -41,7 +41,9 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   };
 
   const pending = (corr ?? []) as unknown as Corr[];
+  // Nóminas y bolsa: solo trabajadoras (los admins no fichan ni tienen horas).
   const team = ((people ?? []) as { user_id: string; full_name: string; weekly_hours: number; role: string; active: boolean; opening_minutes: number; opening_note: string | null }[])
+    .filter((p) => p.role === 'worker')
     .map((p) => ({ ...p, id: p.user_id, weekly_hours: Number(p.weekly_hours) }));
   const allClosings = (closings ?? []) as Closing[];
 

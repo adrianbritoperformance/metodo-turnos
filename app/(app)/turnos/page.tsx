@@ -55,7 +55,7 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
     sb.from('shift_templates').select('id, name, start_time, end_time, weekdays').order('sort'),
     sb.rpc('get_contracts'),
     sb.from('shift_balance').select('user_id, planned_minutes').gte('starts_at', weekFrom).lt('starts_at', weekTo),
-    sb.from('profiles').select('id, full_name, color, active').order('full_name'),
+    sb.from('profiles').select('id, full_name, color, active, role').order('full_name'),
   ]);
   const calPeople = calendarPeople(profs);
   const colorById = new Map(calPeople.map((p) => [p.id, p.color]));
@@ -68,8 +68,9 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
   const templates = allTemplates.filter((t) => t.weekdays.includes(isoDow(day)));
   const tplName = new Map(allTemplates.map((t) => [t.id, t.name]));
   const names = [...new Set(allTemplates.map((t) => t.name))];
-  const people = ((contracts ?? []) as { user_id: string; full_name: string; weekly_hours: number; active: boolean }[])
-    .filter((c) => c.active);
+  // En el cuadrante solo salen las trabajadoras (los admins no hacen turnos).
+  const people = ((contracts ?? []) as { user_id: string; full_name: string; weekly_hours: number; active: boolean; role: string }[])
+    .filter((c) => c.active && c.role === 'worker');
   const team = people.map((p) => ({ id: p.user_id, full_name: p.full_name }));
 
   const dayShifts = shifts.filter((s) => ymd(s.starts_at) === day);
@@ -258,7 +259,7 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
     sb.from('shifts')
       .select('id, user_id, starts_at, ends_at, label, note, changed_at, template_id, profiles(full_name)')
       .gte('starts_at', mFrom).lt('starts_at', mTo).order('starts_at'),
-    sb.from('profiles').select('id, full_name, color, active').order('full_name'),
+    sb.from('profiles').select('id, full_name, color, active, role').order('full_name'),
     loadAbsences(sb, gridFrom, addDays(gridFrom, 41)),
     loadNotices(sb, day),
   ]);
@@ -277,7 +278,7 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
 
       <div className="cols">
         <div className="col sticky">
-          <MonthCalendar month={month} day={day} shifts={all} people={calPeople} absences={absences} />
+          <MonthCalendar month={month} day={day} shifts={all} people={calPeople} />
         </div>
         <div className="col">
           <h2>{fmtLongDay(madridMidnight(day))}</h2>
@@ -287,7 +288,7 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
               <NoticeList notices={dayNotices} nameById={nameById} />
             </>
           )}
-          <DaySlots rows={rows} me={me} colorById={colorById} nameById={nameById} absences={absentOn(absences, day)} />
+          <DaySlots rows={rows} me={me} colorById={colorById} nameById={nameById} absences={absentOn(absences, day, me)} />
         </div>
       </div>
     </>
@@ -295,7 +296,7 @@ async function WorkerView({ sb, day, me }: { sb: SB; day: string; me: string }) 
 }
 
 function calendarPeople(profs: unknown): CalPerson[] {
-  return ((profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean }[])
-    .filter((p) => p.active)
+  return ((profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean; role: string }[])
+    .filter((p) => p.active && p.role === 'worker')
     .map((p, i) => ({ id: p.id, name: p.full_name.split(' ')[0], color: colorOf(p.color, i) }));
 }

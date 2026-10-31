@@ -96,14 +96,14 @@ export function MonthCalendar({ month, day, shifts, people, absences = [] }: {
       </div>
 
       <div className="small muted">En cada día: arriba la mañana, abajo la tarde. Toca un día para verlo.</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+      {absences.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
         {(Object.keys(ABSENCE) as (keyof typeof ABSENCE)[]).map((k) => (
           <span key={k} className="small" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <span className="cal-abs" aria-hidden="true" style={{ background: ABSENCE[k].bg, color: ABSENCE[k].fg, borderColor: ABSENCE[k].fg }}>{ABSENCE[k].letter}</span>
             {ABSENCE[k].label}
           </span>
         ))}
-      </div>
+      </div>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
         {people.map((p) => (
           <span key={p.id} className="small" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>

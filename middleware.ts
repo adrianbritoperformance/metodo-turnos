@@ -3,7 +3,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 type CookieList = { name: string; value: string; options: CookieOptions }[];
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC = ['/login', '/registro'];
+const PUBLIC = ['/login', '/registro', '/recuperar', '/auth'];
 
 export async function middleware(req: NextRequest) {
   let res = NextResponse.next({ request: req });

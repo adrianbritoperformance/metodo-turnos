@@ -3,7 +3,8 @@ import { fmtLongDay } from '@/lib/time';
 import { Nav } from './Nav';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile } = await requireProfile();
+  const { sb, profile } = await requireProfile();
+  const { data: isSuper } = await sb.rpc('is_superadmin');
   return (
     <div className="app">
       <header className="top">
@@ -14,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="main">{children}</main>
-      <Nav owner={profile.role === 'owner'} />
+      <Nav owner={profile.role === 'owner'} superadmin={!!isSuper} />
     </div>
   );
 }
