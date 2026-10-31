@@ -4,9 +4,9 @@ import QRCode from 'qrcode';
 import { requireOwner } from '@/lib/supabase';
 import { addDays, fmtDay, fmtHours, fmtMinutes, fmtRange, fmtTime, madridMidnight, monthOnly, payMonthOf, payPeriod, shiftMonth, ymd } from '@/lib/time';
 import { getPayStartDay, type Closing } from '@/lib/period';
-import { ClosePeriodForm, OpeningForm, VoidPunchForm } from '../Forms';
+import { ClosePeriodForm, VoidPunchForm } from '../Forms';
 import { ABSENCE, loadAbsences, type AbsenceKind } from '@/lib/absences';
-import { reviewCorrection, rotateQr, saveTemplates, setContract, setMember, setPayStartDay, shiftFromPunches } from '../actions';
+import { reviewCorrection, rotateQr, saveTemplates, setPayStartDay, shiftFromPunches } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ type Corr = {
 
 export default async function Admin({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const { m } = await searchParams;
-  const { sb, profile } = await requireOwner();
+  const { sb } = await requireOwner();
   const startDay = await getPayStartDay(sb);
   const month = m && /^\d{4}-\d{2}$/.test(m) ? m : payMonthOf(ymd(), startDay);
   const { start, end } = payPeriod(month, startDay);
@@ -179,30 +179,6 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
                 {!finished && <div className="small muted">El periodo aún no ha terminado: si lo cierras ahora, se cuenta con los turnos puestos hasta el {Number(end.slice(8))}.</div>}
                 <ClosePeriodForm userId={p.id} month={month} total={fmtMinutes(total)} paid={closing?.paid_minutes} note={closing?.note} />
               </div>
-
-              <OpeningForm userId={p.id} minutes={p.opening_minutes} note={p.opening_note} />
-
-              <form action={setContract} style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                <input type="hidden" name="id" value={p.id} />
-                <label style={{ flex: 1 }}>Horas de contrato por semana
-                  <input name="weekly_hours" type="number" min={0} max={60} step={0.5} defaultValue={p.weekly_hours} inputMode="decimal" />
-                </label>
-                <button className="btn sm">Guardar</button>
-              </form>
-              {p.id !== profile.id && (
-                <div className="btn-row">
-                  <form action={setMember}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <input type="hidden" name="role" value={p.role === 'owner' ? 'worker' : 'owner'} />
-                    <button className="btn ghost sm" style={{ width: '100%' }}>{p.role === 'owner' ? 'Quitar encargada' : 'Hacer encargada'}</button>
-                  </form>
-                  <form action={setMember}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <input type="hidden" name="active" value={p.active ? '0' : '1'} />
-                    <button className="btn danger sm" style={{ width: '100%' }}>{p.active ? 'Dar de baja' : 'Reactivar'}</button>
-                  </form>
-                </div>
-              )}
             </div>
           </details>
         ))}
