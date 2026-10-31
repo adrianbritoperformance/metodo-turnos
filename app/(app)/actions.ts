@@ -130,12 +130,25 @@ export async function addStock(_: unknown, fd: FormData) {
   const { sb, profile } = await requireOwner();
   const name = String(fd.get('name') ?? '').trim();
   if (!name) return { error: 'Pon el nombre del producto.' };
+  const category = String(fd.get('category') ?? '').trim() || 'Otros';
   const { error } = await sb.from('stock_items').insert({
-    business_id: profile.business_id, name, place: String(fd.get('place') ?? '').trim() || null, sort: 999,
+    business_id: profile.business_id, name, category, place: String(fd.get('place') ?? '').trim() || null, sort: 999,
   });
   if (error) return { error: 'No se ha podido añadir.' };
   revalidatePath('/reponer');
   return { ok: 'Añadido.' };
+}
+
+export async function updateStockItem(fd: FormData) {
+  const { sb } = await requireOwner();
+  const name = String(fd.get('name') ?? '').trim();
+  if (!name) return;
+  await sb.from('stock_items').update({
+    name,
+    category: String(fd.get('category') ?? '').trim() || 'Otros',
+    place: String(fd.get('place') ?? '').trim() || null,
+  }).eq('id', String(fd.get('id')));
+  revalidatePath('/reponer');
 }
 
 export async function deleteStock(fd: FormData) {

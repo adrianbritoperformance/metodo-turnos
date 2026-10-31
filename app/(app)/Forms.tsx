@@ -100,12 +100,16 @@ export function StockRow({ id, name, place, status, updatedBy }: {
   );
 }
 
-export function AddStockForm() {
+export function AddStockForm({ categories }: { categories: string[] }) {
   const [state, action, pending] = useActionState<State, FormData>(addStock, undefined);
   return (
     <form action={action} className="stack">
-      <label>Producto<input name="name" required placeholder="Leche entera" /></label>
-      <label>Dónde / formato (opcional)<input name="place" placeholder="Barra · cajas de 6 L" /></label>
+      <label>Producto<input name="name" required placeholder="Sirope avellana" /></label>
+      <label>Categoría
+        <input name="category" list="stock-categories" required placeholder="Elige una o escribe una nueva" />
+      </label>
+      <datalist id="stock-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+      <label>Nota (opcional)<input name="place" placeholder="Por ejemplo: cajas de 6 L" /></label>
       <Msg s={state} />
       <button className="btn" disabled={pending}>Añadir</button>
     </form>
