@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useTransition, useState } from 'react';
-import { addAbsence, addNotice, addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveBlock, saveShift, saveTaskRule, sendMessage, setOpening, setStock, voidPunchForm } from './actions';
+import { addAbsence, addNotice, addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveBlock, saveMessageTask, saveShift, sendMessage, setOpening, setStock, voidPunchForm } from './actions';
 
 type State = { error?: string; ok?: string } | undefined;
 
@@ -333,41 +333,64 @@ export function BlockForm({ block }: { block?: { id: string; start: string; end:
   );
 }
 
-/** Tarea que se repite: por puesto y/o por persona, ciertos días. */
-export function TaskRuleForm({ jobs, people }: { jobs: string[]; people: { id: string; full_name: string }[] }) {
-  const [state, action, pending] = useActionState<State, FormData>(saveTaskRule, undefined);
+/** Mensaje o tarea (admins): un día concreto o que se repita, para todos, personas o puestos. */
+export function MessageTaskForm({ jobs, people, day }: { jobs: string[]; people: { id: string; full_name: string }[]; day: string }) {
+  const [state, action, pending] = useActionState<State, FormData>(saveMessageTask, undefined);
+  const [kind, setKind] = useState<'mensaje' | 'tarea'>('mensaje');
+  const [when, setWhen] = useState<'once' | 'repeat'>('once');
+  const [to, setTo] = useState<'all' | 'people' | 'jobs'>('all');
   const box = { flexDirection: 'row' as const, alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 };
   const cb = { minHeight: 0, width: 20, height: 20 };
+  const seg = (on: boolean) => (on ? 'btn sm' : 'btn ghost sm');
   return (
     <form action={action} className="stack">
-      <label>Tarea<textarea name="body" required placeholder="Por ejemplo: limpiar el fregadero a fondo" /></label>
-      <WeekdayPick />
-      <div className="small muted" style={{ marginTop: -6 }}>Marca los 7 días para que salga todos los días.</div>
-      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-        <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 4 }}>Para el puesto</legend>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
-          {jobs.map((j) => (
-            <label key={j} style={box}><input type="checkbox" name="jobs" value={j} style={cb} />{j}</label>
-          ))}
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="when" value={when} />
+      <input type="hidden" name="to" value={to} />
+      <div className="btn-row" role="group" aria-label="Tipo">
+        <button type="button" className={seg(kind === 'mensaje')} aria-pressed={kind === 'mensaje'} onClick={() => setKind('mensaje')}>Mensaje</button>
+        <button type="button" className={seg(kind === 'tarea')} aria-pressed={kind === 'tarea'} onClick={() => setKind('tarea')}>Tarea (se marca hecha)</button>
+      </div>
+      <label>Texto<textarea name="body" required placeholder={kind === 'tarea' ? 'Por ejemplo: limpiar el fregadero a fondo' : 'Por ejemplo: hoy llega el pedido de leche'} /></label>
+
+      <div className="btn-row" role="group" aria-label="Cuándo">
+        <button type="button" className={seg(when === 'once')} aria-pressed={when === 'once'} onClick={() => setWhen('once')}>Un día</button>
+        <button type="button" className={seg(when === 'repeat')} aria-pressed={when === 'repeat'} onClick={() => setWhen('repeat')}>Se repite cada semana</button>
+      </div>
+      {when === 'once'
+        ? <label>Día<input type="date" name="day" defaultValue={day} required /></label>
+        : <>
+            <WeekdayPick />
+            <div className="small muted" style={{ marginTop: -6 }}>Marca los 7 días para que salga todos los días. Le sale a quien trabaje ese día.</div>
+            <label>Turno
+              <select name="part" defaultValue="any">
+                <option value="any">Mañana o tarde</option>
+                <option value="morning">Solo a quien esté por la mañana</option>
+                <option value="afternoon">Solo a quien esté por la tarde</option>
+              </select>
+            </label>
+          </>}
+
+      <fieldset style={{ border: 0, padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 6 }}>Para</legend>
+        <div className="btn-row" role="group" aria-label="Para">
+          <button type="button" className={seg(to === 'all')} aria-pressed={to === 'all'} onClick={() => setTo('all')}>Todo el equipo</button>
+          <button type="button" className={seg(to === 'jobs')} aria-pressed={to === 'jobs'} onClick={() => setTo('jobs')}>Un puesto</button>
+          <button type="button" className={seg(to === 'people')} aria-pressed={to === 'people'} onClick={() => setTo('people')}>Personas</button>
         </div>
+        {to === 'jobs' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
+            {jobs.map((j) => <label key={j} style={box}><input type="checkbox" name="jobs" value={j} style={cb} />{j}</label>)}
+          </div>
+        )}
+        {to === 'people' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
+            {people.map((p) => <label key={p.id} style={box}><input type="checkbox" name="user_ids" value={p.id} style={cb} />{p.full_name}</label>)}
+          </div>
+        )}
       </fieldset>
-      <details>
-        <summary className="small" style={{ textDecoration: 'underline', cursor: 'pointer', padding: '6px 0' }}>O para personas concretas</summary>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px', marginTop: 6 }}>
-          {people.map((p) => (
-            <label key={p.id} style={box}><input type="checkbox" name="user_ids" value={p.id} style={cb} />{p.full_name}</label>
-          ))}
-        </div>
-      </details>
-      <label>Turno
-        <select name="part" defaultValue="any">
-          <option value="any">A quien trabaje ese día (mañana o tarde)</option>
-          <option value="morning">Solo a quien esté por la mañana</option>
-          <option value="afternoon">Solo a quien esté por la tarde</option>
-        </select>
-      </label>
       <Msg s={state} />
-      <button className="btn" disabled={pending}>Guardar tarea</button>
+      <button className="btn" disabled={pending}>Guardar</button>
     </form>
   );
 }

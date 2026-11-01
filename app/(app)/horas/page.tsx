@@ -5,6 +5,7 @@ import { colorOf } from '@/lib/colors';
 import { loadWeekRows, saldoText, type Contract, type WeekRow } from '@/lib/balance';
 import type { Bal } from '@/lib/period';
 import { CorrectionForm } from '../Forms';
+import { setContract } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +67,7 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
                 <span>
                   <span className="t" style={{ display: 'block' }}>{w.full_name}</span>
                   <span className="small muted">
-                    {Number(w.weekly_hours)} h/semana{cur ? ` · esta semana ${fmtHours(cur.worked_minutes)}` : ''}
+                    {Number(w.weekly_hours)} h/semana{cur ? ` · esta semana ${fmtHours(cur.planned_minutes)}` : ''}
                   </span>
                 </span>
               </span>
@@ -78,7 +79,7 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
         })}
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        Saldo de las semanas ya terminadas. “Se le deben” = ha hecho más horas que su contrato; “debe” = menos.
+        Saldo de las semanas ya terminadas, según el horario. “Se le deben” = tenía más horas puestas que su contrato; “debe” = menos.
         Se compensa poniéndole menos (o más) horas en el horario de la semana siguiente.
       </p>
     </section>
@@ -102,6 +103,7 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
   const mine = rows.filter((r) => r.user_id === targetId);
   const saldo = closedSaldo(rows, targetId!, opening);
   const current = mine.find((r) => r.week_start === thisMonday);
+  const totalExtra = mine.reduce((x, r) => x + r.extra_minutes, 0);
 
   // Saldo acumulado al acabar cada semana
   let run = opening;
@@ -118,6 +120,8 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
       .eq('user_id', targetId!).order('at', { ascending: false }).limit(15),
   ]);
   const shifts = (bal ?? []) as Bal[];
+  const monthKey = ymd().slice(0, 7);
+  const monthExtra = shifts.filter((x) => ymd(x.starts_at).slice(0, 7) === monthKey).reduce((x, r) => x + (r.extra_minutes ?? 0), 0);
   const now = Date.now();
   const pastShifts = shifts.filter((s) => new Date(s.starts_at).getTime() < now).slice(-40);
   const s1 = self ? 'Se te deben' : 'Se le deben';
@@ -134,18 +138,34 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
             <div className="big" style={{ fontSize: 34 }}>{Math.abs(saldo) < 1 ? 'Al día' : `${saldo > 0 ? s1 : s2} ${fmtHours(saldo)}`}</div>
             {current && (
               <div className="small" style={{ color: 'var(--crema)' }}>
-                Esta semana: {fmtHours(current.worked_minutes)} de {fmtHours(current.contract_minutes)} ({fmtMinutes(current.balance_minutes)}).
+                Esta semana: {fmtHours(current.planned_minutes)} de {fmtHours(current.contract_minutes)} ({fmtMinutes(current.balance_minutes)}).
                 {' '}Si se cumple el horario, al acabar: {saldoText(saldo + current.balance_minutes)}.
               </div>
             )}
-            <div className="small" style={{ color: 'var(--crema)' }}>Contrato: {Number(me?.weekly_hours ?? 0)} h/semana</div>
+            {!owner && <div className="small" style={{ color: 'var(--crema)' }}>Contrato: {Number(me?.weekly_hours ?? 0)} h/semana</div>}
+          </div>
+          {owner && (
+            <form action={setContract} className="card" style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+              <input type="hidden" name="id" value={targetId} />
+              <label style={{ flex: 1 }}>Horas de contrato por semana de {me?.full_name.split(' ')[0]}
+                <input name="weekly_hours" type="number" min={0} max={60} step={0.5} defaultValue={Number(me?.weekly_hours ?? 0)} inputMode="decimal" />
+              </label>
+              <button className="btn sm">Guardar</button>
+            </form>
+          )}
+          <div className="card" style={{ gap: 4 }}>
+            <div className="eyebrow">Aparte: minutos de más al fichar</div>
+            <div style={{ fontSize: 15 }}>
+              Esta semana <b>{fmtHours(current?.extra_minutes ?? 0)}</b> · este mes <b>{fmtHours(monthExtra)}</b> · en total <b>{fmtHours(totalExtra)}</b>
+            </div>
+            <div className="small muted">Lo que {self ? 'te quedas' : 'se queda'} después de la hora de fin al fichar la salida. No cambia el saldo de arriba.</div>
           </div>
           <a className="btn soft" href={`/horas/export?m=${ymd().slice(0, 7)}${self ? '' : `&u=${targetId}`}`}>
             Descargar horas trabajadas de este mes (Excel)
           </a>
           <p className="small muted" style={{ margin: 0 }}>
-            Horas hechas = las de los turnos + lo que se sale después de la hora de fin (entrar antes no suma).
-            Cada semana se compara con el contrato. Las semanas sin turnos (vacaciones) no cuentan.
+            El saldo sale del horario: las horas puestas cada semana frente al contrato. Las semanas sin turnos (vacaciones) no cuentan.
+            Los minutos que se queda de más al fichar la salida se enseñan aparte y no cambian el saldo.
           </p>
         </div>
 
@@ -165,8 +185,8 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
                   <div>
                     <div className="eyebrow">Semana {fmtWeek(w.week_start)}{future ? ' · prevista' : open ? ' · en curso' : ''}</div>
                     <div className="small" style={{ marginTop: 2 }}>
-                      {fmtHours(w.worked_minutes)} de {fmtHours(w.contract_minutes)}
-                      {w.extra_minutes > 0 ? ` · ${w.extra_minutes} min de más al salir` : ''}
+                      {fmtHours(w.planned_minutes)} de {fmtHours(w.contract_minutes)}
+                      {w.extra_minutes > 0 ? ` · aparte: ${w.extra_minutes} min de más al fichar` : ''}
                     </div>
                     <div className="small muted">Saldo al acabar: {saldoText(w.after)}</div>
                   </div>
@@ -190,8 +210,8 @@ export default async function Horas({ searchParams }: { searchParams: Promise<{ 
                         {missing && <span className="pill low" style={{ alignSelf: 'flex-start' }}>Falta fichar salida</span>}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        {extra > 0 && <div className="small" style={{ fontWeight: 700, color: 'var(--espresso)' }}>+{extra}′</div>}
-                        <div className="num" style={{ fontSize: 16 }}>{fmtHours(base + extra)}</div>
+                        <div className="num" style={{ fontSize: 16 }}>{fmtHours(base)}</div>
+                        {extra > 0 && <div className="small muted">+{extra}′ al fichar</div>}
                       </div>
                     </div>
                   );

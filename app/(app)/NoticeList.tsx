@@ -68,14 +68,16 @@ export function RuleTaskList({ tasks, day, nameById, owner }: {
       {tasks.map((t) => {
         const nobody = t.assignees.length === 0;
         return (
-          <div key={t.rule_id} className="row" style={{ alignItems: 'flex-start', gap: 10, background: nobody ? 'var(--terracota-bg)' : undefined }}>
+          <div key={t.rule_id} className="row" style={{ alignItems: 'flex-start', gap: 10, background: nobody && t.kind === 'tarea' ? 'var(--terracota-bg)' : undefined }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-              <span className="pill low" style={{ alignSelf: 'flex-start' }}>Tarea de cada semana</span>
+              <span className={`pill ${t.kind === 'tarea' ? 'low' : 'dark'}`} style={{ alignSelf: 'flex-start' }}>
+                {t.kind === 'tarea' ? 'Tarea' : 'Mensaje'} · se repite
+              </span>
               <div style={{ fontSize: 15, whiteSpace: 'pre-line' }}>{t.body}</div>
               {owner && (
                 <div className="small" style={{ color: nobody ? 'var(--terracota)' : 'var(--suave)' }}>
                   {nobody
-                    ? `Sin nadie para esta tarea hoy${t.jobs.length ? ` (${t.jobs.join(', ')})` : ''}${PART[t.part] ?? ''}`
+                    ? `Hoy no trabaja nadie para ${t.kind === 'tarea' ? 'esta tarea' : 'este mensaje'}${t.jobs.length ? ` (${t.jobs.join(', ')})` : ''}${PART[t.part] ?? ''}`
                     : `Para: ${t.assignees.map((u) => (nameById.get(u) ?? '—').split(' ')[0]).join(', ')}${PART[t.part] ?? ''}`}
                 </div>
               )}
@@ -83,7 +85,7 @@ export function RuleTaskList({ tasks, day, nameById, owner }: {
                 <div className="small muted">Hecha por {(nameById.get(t.done_by ?? '') ?? '—').split(' ')[0]} a las {hm.format(new Date(t.done_at))}</div>
               )}
             </div>
-            {!nobody && <RuleDone ruleId={t.rule_id} day={day} done={!!t.done_at} />}
+            {!nobody && t.kind === 'tarea' && <RuleDone ruleId={t.rule_id} day={day} done={!!t.done_at} />}
           </div>
         );
       })}

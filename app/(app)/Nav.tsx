@@ -21,9 +21,8 @@ export function Nav({ owner, superadmin = false }: { owner: boolean; superadmin?
   const items: [string, string, string, keyof typeof ic][] = [
     ['/', 'Inicio', 'Inicio', 'inicio'],
     owner ? ['/horas', 'Bolsa de horas', 'Bolsa', 'horas'] : ['/horas', 'Horas y bolsa de horas', 'Horas', 'horas'],
-    ['/horario', 'Horario', 'Horario', 'horario'],
+    ...(owner ? [['/horario', 'Horario', 'Horario', 'horario'] as [string, string, string, keyof typeof ic]] : []),
     ['/turnos', 'Turnos y calendario', 'Turnos', 'turnos'],
-    ...(owner ? [['/plantilla', 'Plantilla', 'Plantilla', 'plantilla'] as [string, string, string, keyof typeof ic]] : []),
     ['/reponer', 'Reponer', 'Reponer', 'reponer'],
   ];
   if (owner) items.push(['/admin', 'Gestión', 'Gestión', 'admin']);

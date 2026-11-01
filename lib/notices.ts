@@ -14,7 +14,7 @@ export async function loadNotices(sb: SB, day: string) {
 }
 
 export type RuleTask = {
-  rule_id: string; body: string; part: 'any' | 'morning' | 'afternoon'; jobs: string[];
+  rule_id: string; kind: 'tarea' | 'mensaje'; everyone: boolean; body: string; part: 'any' | 'morning' | 'afternoon'; jobs: string[];
   assignees: string[]; done_by: string | null; done_at: string | null;
 };
 

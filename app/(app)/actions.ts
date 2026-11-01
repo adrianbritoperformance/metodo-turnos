@@ -502,21 +502,50 @@ export async function deleteMyMessage(fd: FormData) {
 
 /* ---------------- Tareas que se repiten ---------------- */
 
-export async function saveTaskRule(_: unknown, fd: FormData) {
+export async function saveMessageTask(_: unknown, fd: FormData) {
   const { sb, profile } = await requireOwner();
+  const kind = fd.get('kind') === 'tarea' ? 'tarea' : 'mensaje';
   const body = String(fd.get('body') ?? '').trim();
-  const weekdays = fd.getAll('wd').map(Number).filter((n) => n >= 1 && n <= 7);
-  const user_ids = fd.getAll('user_ids').map(String).filter(Boolean);
-  const jobs = fd.getAll('jobs').map(String).filter(Boolean);
-  const part = ['morning', 'afternoon'].includes(String(fd.get('part'))) ? String(fd.get('part')) : 'any';
-  if (!body) return { error: 'Escribe la tarea.' };
-  if (weekdays.length === 0) return { error: 'Marca qué días se repite.' };
-  if (user_ids.length + jobs.length === 0) return { error: 'Elige a quién: un puesto o una persona.' };
-  const { error } = await sb.from('task_rules')
-    .insert({ business_id: profile.business_id, body, weekdays, user_ids, jobs, part, created_by: profile.id });
+  const to = String(fd.get('to'));
+  const user_ids = to === 'people' ? fd.getAll('user_ids').map(String).filter(Boolean) : [];
+  const jobs = to === 'jobs' ? fd.getAll('jobs').map(String).filter(Boolean) : [];
+  const Kind = kind === 'tarea' ? 'Tarea' : 'Mensaje';
+  if (!body) return { error: 'Escribe el texto.' };
+  if (to === 'people' && user_ids.length === 0) return { error: 'Marca al menos una persona.' };
+  if (to === 'jobs' && jobs.length === 0) return { error: 'Marca al menos un puesto.' };
+
+  if (fd.get('when') === 'repeat') {
+    const weekdays = fd.getAll('wd').map(Number).filter((n) => n >= 1 && n <= 7);
+    const part = ['morning', 'afternoon'].includes(String(fd.get('part'))) ? String(fd.get('part')) : 'any';
+    if (weekdays.length === 0) return { error: 'Marca qué días se repite.' };
+    const { error } = await sb.from('task_rules').insert({
+      business_id: profile.business_id, kind, body, weekdays, user_ids, jobs, part, everyone: to === 'all', created_by: profile.id,
+    });
+    revalidatePath('/', 'layout');
+    if (error) return { error: 'No se ha podido guardar.' };
+    return { ok: `${Kind} guardado. Saldrá cada semana los días marcados a quien trabaje.` };
+  }
+
+  const day = String(fd.get('day') ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'Elige el día.' };
+  let ids = user_ids;
+  if (to === 'jobs') {
+    const { data: ppl } = await sb.from('profiles').select('id, job_title, active');
+    const want = jobs.map((j) => j.trim().toLowerCase());
+    ids = ((ppl ?? []) as { id: string; job_title: string | null; active: boolean }[])
+      .filter((p) => p.active && want.includes((p.job_title ?? '').trim().toLowerCase())).map((p) => p.id);
+    if (ids.length === 0) return { error: 'Nadie tiene ese puesto todavía (se pone en Central).' };
+  }
+  const { error } = await sb.from('notices')
+    .insert({ business_id: profile.business_id, day, kind, body, user_ids: ids, created_by: profile.id });
   revalidatePath('/', 'layout');
   if (error) return { error: 'No se ha podido guardar.' };
-  return { ok: 'Tarea guardada. Saldrá sola los días marcados a quien trabaje.' };
+  let who = 'todo el equipo';
+  if (ids.length > 0) {
+    const { data: ppl } = await sb.from('profiles').select('full_name').in('id', ids);
+    who = (ppl ?? []).map((p) => p.full_name.split(' ')[0]).join(', ');
+  }
+  return { ok: `${Kind} guardado para: ${who}.` };
 }
 
 export async function deleteTaskRule(fd: FormData) {

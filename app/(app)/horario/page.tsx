@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { requireProfile } from '@/lib/supabase';
 import { addDays, fmtHours, fmtWeek, madridAt, madridMidnight, mondayOf, shortTime, TZ, ymd } from '@/lib/time';
 import { colorOf } from '@/lib/colors';
 import { ABSENCE, absentOn, loadAbsences } from '@/lib/absences';
 import { loadWeekRows, saldoBefore, saldoText, type Contract } from '@/lib/balance';
 import { copyWeek } from '../actions';
+import { ClearWeekForm } from '../Forms';
 import { HorarioGrid, type GridDay, type GridPerson } from './HorarioGrid';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +25,8 @@ export default async function Horario({ searchParams }: { searchParams: Promise<
   const { w } = await searchParams;
   const { sb, profile } = await requireProfile();
   const owner = profile.role === 'owner';
+  // Herramienta de los admins para hacer el horario; las trabajadoras ven sus turnos en Inicio y Turnos.
+  if (!owner) redirect('/turnos');
   const monday = w && /^\d{4}-\d{2}-\d{2}$/.test(w) ? mondayOf(w) : mondayOf(ymd());
   const sunday = addDays(monday, 6);
 
@@ -67,7 +71,7 @@ export default async function Horario({ searchParams }: { searchParams: Promise<
     });
     // Turnos que no caen en ninguna franja (por ejemplo, de antes de cambiar el horario): se enseñan aparte.
     const outside = dayShifts.filter((s) => !used.has(s.id)).map((s) => ({
-      id: s.user_id, note: `${t(new Date(s.starts_at).getTime())}–${t(new Date(s.ends_at).getTime())}`,
+      id: s.user_id, shiftId: s.id, note: `${t(new Date(s.starts_at).getTime())}–${t(new Date(s.ends_at).getTime())}`,
     }));
     const away = absentOn(absences, date).filter((a) => nameById.has(a.user_id))
       .map((a) => ({ id: a.user_id, label: ABSENCE[a.kind].label }));
@@ -145,7 +149,7 @@ export default async function Horario({ searchParams }: { searchParams: Promise<
             </div>
             <p className="small muted" style={{ margin: 0 }}>
               “Se le deben” = ha hecho más horas que su contrato; “debe” = ha hecho menos. Para compensar,
-              ponle algo menos (o más) la semana que viene. Incluye lo que se quedan de más al fichar la salida.
+              ponle algo menos (o más) la semana que viene. Sale solo del horario: lo fichado de más va aparte.
             </p>
           </div>
           <div className="col">
@@ -156,6 +160,7 @@ export default async function Horario({ searchParams }: { searchParams: Promise<
               <button className="btn ghost">Copiar esta semana a la siguiente</button>
               <div className="small muted">Copia todos los turnos a la semana del {fmtWeek(addDays(monday, 7))}. No pisa lo que ya esté puesto allí.</div>
             </form>
+            <ClearWeekForm monday={monday} label={fmtWeek(monday)} />
           </div>
         </div>
       )}

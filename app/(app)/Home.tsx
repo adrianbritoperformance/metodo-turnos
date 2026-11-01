@@ -52,7 +52,7 @@ export async function Home({ autoCode }: { autoCode?: string }) {
   const myRules = ruleTasks.filter((t) => t.assignees.includes(profile.id));
   // Pendiente = mensajes de hoy + tareas sin hacer + tareas del turno + tareas de cada semana sin hacer
   const pendingCount = myNotices.filter((n) => n.kind === 'mensaje' || !n.done_at).length + shifts.filter((s) => s.note).length
-    + myRules.filter((t) => !t.done_at).length;
+    + myRules.filter((t) => t.kind === 'mensaje' || !t.done_at).length;
   const coworkers = allProfiles.filter((p) => p.active && p.id !== profile.id)
     .sort((a, b) => Number(a.role === 'owner') - Number(b.role === 'owner') || a.full_name.localeCompare(b.full_name, 'es'));
 
@@ -238,6 +238,8 @@ async function OwnerToday({ sb, today, absences, notices, nameById, ruleTasks, o
 
   const tasks = notices.filter((n) => n.kind === 'tarea');
   const messages = notices.filter((n) => n.kind === 'mensaje');
+  const ruleMsgs = ruleTasks.filter((t) => t.kind === 'mensaje');
+  ruleTasks = ruleTasks.filter((t) => t.kind === 'tarea');
 
   return (
     <>
@@ -277,11 +279,12 @@ async function OwnerToday({ sb, today, absences, notices, nameById, ruleTasks, o
       )}
       <RuleTaskList tasks={ruleTasks} day={today} nameById={nameById} owner />
       <NoticeList notices={tasks} nameById={nameById} owner
-        empty={ruleTasks.length ? undefined : 'No hay tareas para hoy. Las de un día se ponen en Turnos y calendario; las que se repiten, en Gestión.'} />
+        empty={ruleTasks.length ? undefined : 'No hay tareas para hoy. Se ponen en Gestión → Mensajes y tareas.'} />
 
-      {messages.length > 0 && (
+      {messages.length + ruleMsgs.length > 0 && (
         <>
           <h2>Mensajes de hoy</h2>
+          <RuleTaskList tasks={ruleMsgs} day={today} nameById={nameById} owner />
           <NoticeList notices={messages} nameById={nameById} owner />
         </>
       )}

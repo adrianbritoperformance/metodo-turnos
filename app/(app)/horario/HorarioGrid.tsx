@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setBlockPeople } from '../actions';
+import { deleteShift, setBlockPeople } from '../actions';
 
 export type GridCell = { blockId: string; start: string; end: string; people: { id: string; note?: string }[] };
 export type GridDay = {
   date: string; label: string; today: boolean; cells: GridCell[];
-  outside: { id: string; note: string }[]; away: { id: string; label: string }[];
+  outside: { id: string; shiftId: string; note: string }[]; away: { id: string; label: string }[];
 };
 export type GridPerson = {
   id: string; name: string; fullName: string; color: string; owner: boolean; job: string | null;
@@ -71,10 +71,19 @@ export function HorarioGrid({ days, people, owner, me }: { days: GridDay[]; peop
             </div>
             {d.outside.length > 0 && (
               <div className="hz-outside small">
-                Fuera de las franjas: {d.outside.map((o, i) => (
-                  <span key={i} style={{ color: byId.get(o.id)?.color, fontWeight: 700 }}>{i > 0 ? ' · ' : ''}{byId.get(o.id)?.name} {o.note}</span>
+                Otros turnos: {d.outside.map((o, i) => (
+                  <span key={o.shiftId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {i > 0 ? ' · ' : ''}{byId.get(o.id)?.name} {o.note}
+                    {owner && (
+                      <form action={deleteShift} style={{ display: 'inline' }}
+                        onSubmit={(e) => { if (!confirm(`¿Quitar el turno de ${byId.get(o.id)?.name} ${o.note}?`)) e.preventDefault(); }}>
+                        <input type="hidden" name="id" value={o.shiftId} />
+                        <button className="small" aria-label={`Quitar el turno de ${byId.get(o.id)?.name} ${o.note}`}
+                          style={{ background: 'none', border: 0, color: 'var(--terracota)', textDecoration: 'underline', cursor: 'pointer', minHeight: 32 }}>quitar</button>
+                      </form>
+                    )}
+                  </span>
                 ))}
-                {owner && <span className="muted"> (se cambia desde Turnos)</span>}
               </div>
             )}
           </div>

@@ -4,8 +4,9 @@ import QRCode from 'qrcode';
 import { requireOwner } from '@/lib/supabase';
 import { fmtDay, fmtTime, monthName, shiftMonth, shortTime, ymd } from '@/lib/time';
 import { JOBS } from '@/lib/jobs';
-import { BlockForm, TaskRuleForm, VoidPunchForm } from '../Forms';
-import { deleteBlock, deleteTaskRule, reviewCorrection, rotateQr, saveTemplates, shiftFromPunches } from '../actions';
+import type { Notice } from '@/lib/notices';
+import { BlockForm, MessageTaskForm, VoidPunchForm } from '../Forms';
+import { deleteBlock, deleteNotice, deleteTaskRule, reviewCorrection, rotateQr, saveTemplates, shiftFromPunches } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,12 +27,14 @@ export default async function Admin() {
     sb.from('punches').select('id, user_id, kind, at, profiles:user_id(full_name)').is('shift_id', null).is('voided_at', null)
       .gte('at', new Date(Date.now() - 62 * 86400e3).toISOString()).order('at'),
     sb.from('day_blocks').select('id, weekdays, start_time, end_time').order('start_time'),
-    sb.from('task_rules').select('id, body, weekdays, user_ids, jobs, part').order('created_at'),
+    sb.from('task_rules').select('id, kind, everyone, body, weekdays, user_ids, jobs, part').order('created_at'),
     sb.from('profiles').select('id, full_name, active, job_title').order('full_name'),
   ]);
+  const { data: up } = await sb.from('notices').select('*').gte('day', ymd()).order('day').order('created_at').limit(60);
+  const upcoming = (up ?? []) as Notice[];
   const templates = (tpls ?? []) as { id: string; name: string; start_time: string; end_time: string; weekdays: number[] }[];
   const blocks = (blk ?? []) as { id: string; weekdays: number[]; start_time: string; end_time: string }[];
-  const taskRules = (rules ?? []) as { id: string; body: string; weekdays: number[]; user_ids: string[]; jobs: string[]; part: string }[];
+  const taskRules = (rules ?? []) as { id: string; kind: string; everyone: boolean; body: string; weekdays: number[]; user_ids: string[]; jobs: string[]; part: string }[];
   const ppl = ((prf ?? []) as { id: string; full_name: string; active: boolean; job_title: string | null }[]).filter((p) => p.active);
   const nameOf = new Map(ppl.map((p) => [p.id, p.full_name.split(' ')[0]]));
   const jobs = [...new Set([...JOBS, ...ppl.map((p) => p.job_title).filter((j): j is string => !!j)])]
@@ -121,16 +124,23 @@ export default async function Admin() {
         <div className="small muted">Herramienta de organización interna del local. No sustituye al registro de jornada oficial.</div>
       </div>
 
-      <h2>Tareas que se repiten</h2>
-      <div className="small muted" style={{ marginTop: -6 }}>Salen solas los días marcados a quien tenga ese puesto (o a esa persona) y trabaje ese día. Las tareas de un solo día se ponen en Turnos y calendario.</div>
+      <h2 id="mensajes">Mensajes y tareas</h2>
+      <details className="card" open={false}>
+        <summary className="btn soft">+ Nuevo mensaje o tarea</summary>
+        <div style={{ marginTop: 12 }}>
+          <MessageTaskForm jobs={jobs} people={ppl.map((p) => ({ id: p.id, full_name: p.full_name }))} day={ymd()} />
+        </div>
+      </details>
       {taskRules.length > 0 && (
         <div className="list">
+          <div className="row" style={{ background: 'var(--papel)' }}><span className="eyebrow">Se repiten cada semana</span></div>
           {taskRules.map((r) => (
             <div key={r.id} className="row" style={{ alignItems: 'flex-start' }}>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className={`pill ${r.kind === 'tarea' ? 'low' : 'dark'}`} style={{ alignSelf: 'flex-start' }}>{r.kind === 'tarea' ? 'Tarea' : 'Mensaje'}</span>
                 <div className="t" style={{ whiteSpace: 'pre-line' }}>{r.body}</div>
                 <div className="small muted">
-                  {daysLabel(r.weekdays)}{PART[r.part] ?? ''} · para {[...r.jobs, ...r.user_ids.map((u) => nameOf.get(u) ?? '—')].join(', ')}
+                  {daysLabel(r.weekdays)}{PART[r.part] ?? ''} · para {r.everyone ? 'todo el equipo' : [...r.jobs, ...r.user_ids.map((u) => nameOf.get(u) ?? '—')].join(', ')}
                 </div>
               </div>
               <form action={deleteTaskRule}>
@@ -141,12 +151,27 @@ export default async function Admin() {
           ))}
         </div>
       )}
-      <details className="card">
-        <summary className="btn ghost">+ Nueva tarea que se repite</summary>
-        <div style={{ marginTop: 12 }}>
-          <TaskRuleForm jobs={jobs} people={ppl.map((p) => ({ id: p.id, full_name: p.full_name }))} />
-        </div>
-      </details>
+      <div className="list">
+        <div className="row" style={{ background: 'var(--papel)' }}><span className="eyebrow">De un día · próximos</span></div>
+        {upcoming.length === 0 && <div className="row muted small">No hay ninguno puesto para hoy ni para los próximos días.</div>}
+        {upcoming.map((n) => (
+          <div key={n.id} className="row" style={{ alignItems: 'flex-start' }}>
+            <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span className={`pill ${n.kind === 'tarea' ? 'low' : 'dark'}`} style={{ alignSelf: 'flex-start' }}>{n.kind === 'tarea' ? 'Tarea' : 'Mensaje'} · {fmtDay(`${n.day}T12:00:00Z`)}</span>
+              <div className="t" style={{ whiteSpace: 'pre-line', fontWeight: 400 }}>{n.body}</div>
+              <div className="small muted">
+                Para {n.user_ids.length === 0 ? 'todo el equipo' : n.user_ids.map((u) => nameOf.get(u) ?? '—').join(', ')}
+                {n.created_by ? ` · de ${nameOf.get(n.created_by) ?? '—'}` : ''}
+                {n.done_at ? ' · hecha' : ''}
+              </div>
+            </div>
+            <form action={deleteNotice}>
+              <input type="hidden" name="id" value={n.id} />
+              <button className="small" style={{ background: 'none', border: 0, color: 'var(--terracota)', textDecoration: 'underline', cursor: 'pointer', minHeight: 36 }}>Borrar</button>
+            </form>
+          </div>
+        ))}
+      </div>
 
         </div>
         <div className="col">

@@ -14,17 +14,30 @@ export type Contract = {
   opening_minutes?: number | null;
 };
 
-/** Todas las semanas visibles (las propias, o las de todo el equipo si es admin). */
+/**
+ * Todas las semanas visibles (las propias, o las de todo el equipo si es admin).
+ * El saldo sale SOLO del horario: horas puestas − contrato. Los minutos de más al
+ * fichar la salida (extra_minutes) se enseñan aparte y no cuentan en el saldo.
+ */
+export function plannedOnly(r: WeekRow): WeekRow {
+  return {
+    ...r,
+    week_start: String(r.week_start).slice(0, 10),
+    worked_minutes: r.planned_minutes,
+    balance_minutes: r.planned_minutes - r.contract_minutes,
+  };
+}
+
 export async function loadWeekRows(sb: SB, userId?: string) {
   let q = sb.from('week_balance').select('*').order('week_start');
   if (userId) q = q.eq('user_id', userId);
   const { data } = await q;
-  return ((data ?? []) as WeekRow[]).map((r) => ({ ...r, week_start: String(r.week_start).slice(0, 10) }));
+  return ((data ?? []) as WeekRow[]).map(plannedOnly);
 }
 
 /**
  * Saldo acumulado de una persona antes de la semana que empieza en `monday`:
- * suma de (horas hechas − contrato) de cada semana anterior con turnos.
+ * suma de (horas del horario − contrato) de cada semana anterior con turnos.
  * Positivo: se le deben horas. Negativo: debe horas.
  */
 export function saldoBefore(rows: WeekRow[], userId: string, monday: string, opening = 0) {
