@@ -1,6 +1,7 @@
 import { requireSuperadmin } from '@/lib/supabase';
 import { TZ } from '@/lib/time';
-import { AccountForm, JOBS, NewBusinessForm, TempPasswordForm } from './Forms';
+import { AccountForm, NewBusinessForm, TempPasswordForm } from './Forms';
+import { JOBS } from '@/lib/jobs';
 
 export const dynamic = 'force-dynamic';
 

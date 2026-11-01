@@ -5,7 +5,6 @@ import { saCreateBusiness, saSetAccount, saSetPassword } from '../actions';
 
 type State = { error?: string; ok?: string } | undefined;
 
-export const JOBS = ['Dueño/a', 'Encargado/a', 'Barista', 'Jefe/a de cocina', 'Cocina', 'Sala', 'Pastelería'];
 
 export function AccountForm({ a, me }: {
   a: { user_id: string; full_name: string; email: string; role: string; job_title: string | null; active: boolean; last_sign_in_at: string | null };
