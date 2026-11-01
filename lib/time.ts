@@ -151,3 +151,15 @@ export function parseHours(v: string) {
   if (!Number.isFinite(min)) return NaN;
   return neg ? -min : min;
 }
+
+/** Instante UTC de una hora de Madrid ("HH:MM" o "HH:MM:SS") de un día "YYYY-MM-DD". */
+export function madridAt(day: string, time: string) {
+  const [y, mo, d] = day.split('-').map(Number);
+  const [h, mi] = time.split(':').map(Number);
+  const utc = Date.UTC(y, mo - 1, d, h, mi);
+  const first = utc - offsetMinutes(new Date(utc)) * 60000;
+  return new Date(utc - offsetMinutes(new Date(first)) * 60000);
+}
+
+/** "8:30" a partir de "08:30:00" */
+export const shortTime = (t: string) => t.slice(0, 5).replace(/^0/, '');

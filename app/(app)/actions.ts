@@ -57,7 +57,7 @@ export async function requestCorrection(_: unknown, fd: FormData) {
   });
   if (error) return { error: 'No se ha podido enviar la corrección.' };
   revalidatePath('/horas');
-  return { ok: 'Corrección enviada. La encargada la revisará.' };
+  return { ok: 'Corrección enviada. Los responsables la revisarán.' };
 }
 
 /* ---------------- Encargada ---------------- */
@@ -121,7 +121,7 @@ export async function setContract(fd: FormData) {
 export async function setStock(id: string, status: number) {
   const { sb, profile } = await requireProfile();
   await sb.from('stock_items')
-    .update({ status: Math.min(2, Math.max(0, status)), updated_by: profile.id, updated_at: new Date().toISOString() })
+    .update({ status: status > 0 ? 2 : 0, updated_by: profile.id, updated_at: new Date().toISOString() })
     .eq('id', id);
   revalidatePath('/reponer');
 }
@@ -162,7 +162,7 @@ export async function markOrdered() {
   const { sb, profile } = await requireOwner();
   await sb.from('stock_items')
     .update({ status: 0, updated_by: profile.id, updated_at: new Date().toISOString() })
-    .eq('business_id', profile.business_id).eq('status', 2);
+    .eq('business_id', profile.business_id).gt('status', 0);
   revalidatePath('/reponer');
 }
 
@@ -270,7 +270,7 @@ export async function voidPunch(id: string, reason: string) {
   const { error } = await sb.rpc('void_punch', { p_id: id, p_reason: reason });
   revalidatePath('/', 'layout');
   if (error) {
-    if (/10 minutos/.test(error.message)) return { error: 'Han pasado más de 10 minutos: pídeselo a la encargada.' };
+    if (/10 minutos/.test(error.message)) return { error: 'Han pasado más de 10 minutos: pídeselo a los responsables.' };
     if (/motivo/.test(error.message)) return { error: 'Escribe el motivo.' };
     return { error: 'No se ha podido anular.' };
   }
@@ -424,4 +424,110 @@ export async function saveUsual(_: unknown, fd: FormData) {
   }
   revalidatePath('/plantilla');
   return { ok: 'Horario habitual guardado.' };
+}
+
+/* ---------------- Horario por franjas ---------------- */
+
+/** Pone y quita personas de una franja de un día (solo lo que cambia). */
+export async function setBlockPeople(date: string, blockId: string, before: string[], after: string[]) {
+  const { sb } = await requireOwner();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Día no válido.' };
+  const add = after.filter((x) => !before.includes(x));
+  const remove = before.filter((x) => !after.includes(x));
+  const { data: ppl } = await sb.from('profiles').select('id, full_name').in('id', [...add, ...remove]);
+  const name = new Map(((ppl ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name.split(' ')[0]]));
+  const failed: string[] = [];
+  for (const [ids, on] of [[remove, false], [add, true]] as const) {
+    for (const id of ids) {
+      const { error } = await sb.rpc('toggle_block', { p_user: id, p_date: date, p_block: blockId, p_on: on });
+      if (error) {
+        const why = /fichado/.test(error.message) ? 'ya fichó ese turno y ha terminado'
+          : /solapa/.test(error.message) ? 'tiene otro turno que se cruza'
+          : 'no se ha podido guardar';
+        failed.push(`${name.get(id) ?? '—'}: ${why}`);
+      }
+    }
+  }
+  revalidatePath('/', 'layout');
+  return failed.length ? { error: failed.join(' · ') } : { ok: 'Guardado.' };
+}
+
+/** Franjas del horario (Gestión). */
+export async function saveBlock(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireOwner();
+  const id = String(fd.get('id') ?? '');
+  const st = String(fd.get('start') ?? '');
+  const en = String(fd.get('end') ?? '');
+  const weekdays = fd.getAll('wd').map(Number).filter((n) => n >= 1 && n <= 7);
+  if (!/^\d{2}:\d{2}/.test(st) || !/^\d{2}:\d{2}/.test(en)) return { error: 'Pon la hora de inicio y de fin.' };
+  if (en <= st) return { error: 'La hora de fin tiene que ser después de la de inicio.' };
+  if (weekdays.length === 0) return { error: 'Marca al menos un día.' };
+  const row = { start_time: st, end_time: en, weekdays };
+  const { error } = id
+    ? await sb.from('day_blocks').update(row).eq('id', id)
+    : await sb.from('day_blocks').insert({ ...row, business_id: profile.business_id });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: id ? 'Franja cambiada. Los turnos ya puestos no se tocan.' : 'Franja añadida.' };
+}
+
+export async function deleteBlock(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.from('day_blocks').delete().eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
+/* ---------------- Mensajes de las trabajadoras ---------------- */
+
+export async function sendMessage(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireProfile();
+  const body = String(fd.get('body') ?? '').trim();
+  const day = String(fd.get('day') ?? '');
+  const ids = fd.getAll('user_ids').map(String).filter(Boolean);
+  if (!body) return { error: 'Escribe el mensaje.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: 'Elige el día.' };
+  if (ids.length === 0) return { error: 'Elige al menos una compañera.' };
+  const { error } = await sb.from('notices')
+    .insert({ business_id: profile.business_id, day, kind: 'mensaje', body, user_ids: ids, created_by: profile.id });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido enviar.' };
+  return { ok: 'Mensaje enviado.' };
+}
+
+export async function deleteMyMessage(fd: FormData) {
+  const { sb } = await requireProfile();
+  await sb.from('notices').delete().eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
+/* ---------------- Tareas que se repiten ---------------- */
+
+export async function saveTaskRule(_: unknown, fd: FormData) {
+  const { sb, profile } = await requireOwner();
+  const body = String(fd.get('body') ?? '').trim();
+  const weekdays = fd.getAll('wd').map(Number).filter((n) => n >= 1 && n <= 7);
+  const user_ids = fd.getAll('user_ids').map(String).filter(Boolean);
+  const jobs = fd.getAll('jobs').map(String).filter(Boolean);
+  const part = ['morning', 'afternoon'].includes(String(fd.get('part'))) ? String(fd.get('part')) : 'any';
+  if (!body) return { error: 'Escribe la tarea.' };
+  if (weekdays.length === 0) return { error: 'Marca qué días se repite.' };
+  if (user_ids.length + jobs.length === 0) return { error: 'Elige a quién: un puesto o una persona.' };
+  const { error } = await sb.from('task_rules')
+    .insert({ business_id: profile.business_id, body, weekdays, user_ids, jobs, part, created_by: profile.id });
+  revalidatePath('/', 'layout');
+  if (error) return { error: 'No se ha podido guardar.' };
+  return { ok: 'Tarea guardada. Saldrá sola los días marcados a quien trabaje.' };
+}
+
+export async function deleteTaskRule(fd: FormData) {
+  const { sb } = await requireOwner();
+  await sb.from('task_rules').delete().eq('id', String(fd.get('id')));
+  revalidatePath('/', 'layout');
+}
+
+export async function setRuleDone(ruleId: string, day: string, done: boolean) {
+  const { sb } = await requireProfile();
+  const { error } = await sb.rpc('set_rule_done', { p_rule: ruleId, p_day: day, p_done: done });
+  revalidatePath('/', 'layout');
+  return error ? { error: 'No se ha podido guardar.' } : {};
 }

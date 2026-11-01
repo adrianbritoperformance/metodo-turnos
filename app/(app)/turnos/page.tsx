@@ -201,7 +201,7 @@ async function OwnerPlanner({ sb, day, me }: { sb: SB; day: string; me: string }
       <details className="card">
         <summary className="btn ghost">+ Vacaciones, asuntos propios o baja</summary>
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div className="small muted">Es solo informativo: se ve en el calendario y en la nómina, pero no cambia las horas.</div>
+          <div className="small muted">Es solo informativo: se ve en el calendario y en el horario, pero no cambia las horas.</div>
           <AbsenceForm people={team} day={day} />
         </div>
       </details>

@@ -31,19 +31,17 @@ export default async function Reponer() {
       <h1>Reposición</h1>
       <div className="cols wide-left">
         <div className="col">
-          <p className="muted" style={{ margin: 0 }}>Toca un producto para cambiar: Hay → Queda poco → Falta.</p>
+          <p className="muted" style={{ margin: 0 }}>Toca un producto para cambiarlo entre <b>Hay</b> y <b>Pedir</b>. Si queda poco o no queda, márcalo como Pedir.</p>
 
           {cats.map((c) => {
             const list = groups.get(c)!;
-            const missing = list.filter((i) => i.status === 2).length;
-            const low = list.filter((i) => i.status === 1).length;
+            const missing = list.filter((i) => i.status > 0).length;
             return (
               <details key={c} className="list" open>
                 <summary className="row" style={{ background: 'var(--mantequilla)', cursor: 'pointer' }}>
                   <span className="eyebrow" style={{ color: 'var(--espresso)' }}>{c}</span>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {missing > 0 && <span className="pill out">{missing} falta{missing > 1 ? 'n' : ''}</span>}
-                    {low > 0 && <span className="pill low">{low} poco</span>}
+                    {missing > 0 && <span className="pill out">{missing} para pedir</span>}
                     <span className="small muted">{list.length}</span>
                   </span>
                 </summary>
@@ -64,23 +62,22 @@ export default async function Reponer() {
               <div className="big" style={{ fontSize: 22 }}>{toOrder.length} {toOrder.length === 1 ? 'producto' : 'productos'}</div>
             </div>
           </div>
-          {owner && items.some((i) => i.status === 2) && (
+          {owner && items.some((i) => i.status > 0) && (
             <form action={markOrdered} className="card" style={{ gap: 8 }}>
               <button className="btn">Repuesto</button>
-              <div className="small muted">Lo que falta pasa a “Hay”. Lo que queda poco se mantiene hasta que alguien lo cambie.</div>
+              <div className="small muted">Cuando llega el pedido: todo lo marcado como “Pedir” pasa a “Hay”.</div>
             </form>
           )}
 
           {toOrder.length > 0 && (
             <div className="card" style={{ gap: 10 }}>
-              <div className="eyebrow">Lista para pedir</div>
+              <div className="eyebrow">Para pedir</div>
               {cats.filter((c) => groups.get(c)!.some((i) => i.status > 0)).map((c) => (
                 <div key={c} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <div className="small" style={{ fontWeight: 700, color: 'var(--suave)' }}>{c}</div>
                   {groups.get(c)!.filter((i) => i.status > 0).map((i) => (
                     <div key={i.id} style={{ fontSize: 15 }}>
-                      <span style={{ color: i.status === 2 ? 'var(--terracota)' : '#5C4310', fontWeight: 700 }}>{i.status === 2 ? 'Falta' : 'Poco'}</span>
-                      {' · '}{i.name}{i.place ? <span className="muted small"> ({i.place})</span> : null}
+                      {i.name}{i.place ? <span className="muted small"> ({i.place})</span> : null}
                     </div>
                   ))}
                 </div>

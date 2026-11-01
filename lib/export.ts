@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { requireProfile } from './supabase';
-import { getPayStartDay, type Closing } from './period';
-import { fmtTime, madridMidnight, addDays, payPeriod, ymd } from './time';
+import { fmtTime, mondayOf, monthRange, ymd, addDays } from './time';
+import type { Contract, WeekRow } from './balance';
 
 type SB = Awaited<ReturnType<typeof requireProfile>>['sb'];
 
@@ -12,59 +12,49 @@ const hm = (min: number | null | undefined) => {
 const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
 /**
- * Registro de jornada de un periodo de nómina en CSV (se abre en Excel).
- * `onlyUser`: si se pasa, solo esa persona (la trabajadora descargando lo suyo).
+ * Horas trabajadas de un mes natural en CSV (se abre en Excel). Uso interno del local.
+ * `onlyUser`: solo esa persona.
  */
-export async function payrollCsv(sb: SB, month: string, onlyUser?: string) {
-  const startDay = await getPayStartDay(sb);
-  const { start, end } = payPeriod(month, startDay);
-  const from = madridMidnight(start).toISOString();
-  const to = madridMidnight(addDays(end, 1)).toISOString();
-
+export async function hoursCsv(sb: SB, month: string, onlyUser?: string) {
+  const { from, to } = monthRange(month);
   let q = sb.from('shift_balance').select('*').gte('starts_at', from).lt('starts_at', to).order('starts_at');
   if (onlyUser) q = q.eq('user_id', onlyUser);
-  const [{ data: rows }, { data: people }, { data: closings }] = await Promise.all([
-    q,
-    sb.rpc('get_contracts'),
-    sb.from('pay_closings').select('*').lte('period_month', `${month}-01`).order('period_month', { ascending: false }),
-  ]);
-  const team = ((people ?? []) as { user_id: string; full_name: string; weekly_hours: number; opening_minutes: number }[])
-    .filter((p) => !onlyUser || p.user_id === onlyUser);
+  let w = sb.from('week_balance').select('*').order('week_start');
+  if (onlyUser) w = w.eq('user_id', onlyUser);
+  const [{ data: rows }, { data: people }, { data: weeks }] = await Promise.all([q, sb.rpc('get_contracts'), w]);
+  const team = ((people ?? []) as Contract[]).filter((p) => p.role === 'worker' && (!onlyUser || p.user_id === onlyUser));
   const name = new Map(team.map((p) => [p.user_id, p.full_name]));
-  const all = (closings ?? []) as Closing[];
-  const balances = await Promise.all(team.map((p) => sb.rpc('period_balance', { p_user: p.user_id, p_month: `${month}-01` })));
+  const wk = ((weeks ?? []) as WeekRow[]).map((r) => ({ ...r, week_start: String(r.week_start).slice(0, 10) }));
+  const firstMonday = mondayOf(`${month}-01`);
+  const lastDay = addDays(ymd(new Date(new Date(to).getTime() - 1)), 0);
 
   const lines: unknown[][] = [
-    [`REGISTRO DE JORNADA · Nómina ${month} (${start} a ${end})`],
-    ['Trabajador', 'Fecha', 'Puesto', 'Inicio previsto', 'Fin previsto', 'Entrada real', 'Salida real', 'Horas base', 'Minutos extra (salida)', 'Total día', 'Corrección pendiente'],
-    ...((rows ?? []) as { user_id: string; starts_at: string; ends_at: string; label: string | null; real_in: string | null; real_out: string | null; planned_minutes: number; extra_minutes: number | null; has_pending_correction: boolean }[])
+    [`HORAS TRABAJADAS · ${month} · uso interno`],
+    ['Persona', 'Fecha', 'Inicio previsto', 'Fin previsto', 'Entrada', 'Salida', 'Horas del turno', 'Minutos de más (salida)', 'Total día', 'Corrección pendiente'],
+    ...((rows ?? []) as { user_id: string; starts_at: string; ends_at: string; real_in: string | null; real_out: string | null; planned_minutes: number; extra_minutes: number | null; has_pending_correction: boolean }[])
       .filter((r) => name.has(r.user_id))
       .map((r) => [
-        name.get(r.user_id), ymd(r.starts_at), r.label ?? '',
+        name.get(r.user_id), ymd(r.starts_at),
         fmtTime(r.starts_at), fmtTime(r.ends_at), r.real_in ? fmtTime(r.real_in) : '', r.real_out ? fmtTime(r.real_out) : '',
         hm(r.planned_minutes), r.extra_minutes ?? '', hm(r.planned_minutes + (r.extra_minutes ?? 0)), r.has_pending_correction ? 'Sí' : '',
       ]),
     [],
-    ['RESUMEN DEL PERIODO'],
-    ['Trabajador', 'Contrato h/sem', 'Horas hechas', 'Horas contrato', 'Saldo del periodo', 'Venía de antes', 'Pagadas en nómina', 'Queda para compensar', 'Conformidad', 'Comentario'],
-    ...team.map((p, i) => {
-      const b = (balances[i].data as { worked_minutes: number; contract_minutes: number; balance_minutes: number }[] | null)?.[0];
-      const mine = all.filter((c) => c.user_id === p.user_id);
-      const c = mine.find((x) => x.period_month.slice(0, 7) === month);
-      const prev = mine.find((x) => x.period_month.slice(0, 7) < month);
-      const carried = c ? c.carried_in : prev ? prev.carried_out : p.opening_minutes;
-      const status = !c ? 'Sin cerrar' : c.worker_status === 'agree' ? 'Conforme' : c.worker_status === 'disagree' ? 'No conforme' : 'Pendiente';
-      return [
-        p.full_name, Number(p.weekly_hours), hm(b?.worked_minutes), hm(b?.contract_minutes), hm(c ? c.balance_minutes : b?.balance_minutes),
-        hm(carried), c ? hm(c.paid_minutes) : '', hm(c ? c.carried_out : carried + (b?.balance_minutes ?? 0)), status, c?.worker_comment ?? '',
-      ];
+    ['SEMANAS (lunes a domingo)'],
+    ['Persona', 'Semana (lunes)', 'Horas hechas', 'Horas de contrato', 'Diferencia', 'Saldo acumulado al acabar'],
+    ...team.flatMap((p) => {
+      let run = Number(p.opening_minutes ?? 0);
+      return wk.filter((r) => r.user_id === p.user_id).flatMap((r) => {
+        run += r.balance_minutes;
+        if (r.week_start < firstMonday || r.week_start > lastDay) return [];
+        return [[p.full_name, r.week_start, hm(r.worked_minutes), hm(r.contract_minutes), hm(r.balance_minutes), hm(run)]];
+      });
     }),
   ];
   const csv = '﻿' + lines.map((l) => l.map(esc).join(';')).join('\r\n');
   return new NextResponse(csv, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="registro-jornada-${month}${onlyUser ? '-' + (name.get(onlyUser) ?? '').split(' ')[0].toLowerCase() : ''}.csv"`,
+      'Content-Disposition': `attachment; filename="horas-${month}${onlyUser ? '-' + (name.get(onlyUser) ?? '').split(' ')[0].toLowerCase() : ''}.csv"`,
     },
   });
 }

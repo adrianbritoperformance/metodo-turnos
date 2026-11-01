@@ -89,7 +89,7 @@ export function Scanner({ nextKind, autoCode }: { nextKind: 'in' | 'out'; autoCo
             {result.kind === 'out' && result.extra !== null && (result.extra > 0
               ? <>Has salido {fmtMinutes(result.extra).replace('+', '')} después de tu hora. Se suman a tu bolsa.</>
               : <>Saliste a tu hora: no suma a la bolsa.</>)}
-            {result.kind === 'out' && result.extra === null && 'No había turno asignado ahora: la encargada lo verá en el registro.'}
+            {result.kind === 'out' && result.extra === null && 'No había turno asignado ahora: los responsables lo verán en Gestión.'}
             {result.kind === 'in' && result.shiftEnd === null && ' Ojo: no tenías turno puesto ahora. Si te has equivocado de día, anúlalo.'}
           </div>
           <VoidRecent id={result.id} />

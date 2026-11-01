@@ -19,7 +19,7 @@ export default async function Recuperar({ searchParams }: { searchParams: Promis
       <div className="card" style={{ gap: 10 }}>
         <div style={{ fontWeight: 700 }}>Así se recupera:</div>
         <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 15 }}>
-          <li>Avisa a tu encargada o al administrador de la app.</li>
+          <li>Avisa a los responsables del local o al administrador de la app.</li>
           <li>Te dará una <b>contraseña temporal</b>.</li>
           <li>Entra con tu correo y esa contraseña.</li>
           <li>Ve a <b>Mi perfil → Cambiar contraseña</b> y pon una tuya.</li>

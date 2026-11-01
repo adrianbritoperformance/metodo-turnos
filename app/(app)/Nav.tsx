@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const ic = {
+  horario: 'M3 4h18v16H3zM3 9h18M3 14h18M8 4v16',
   plantilla: 'M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14',
   central: 'M4 6h16M4 12h16M4 18h16M8 4v4M16 10v4M11 16v4',
   inicio: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
@@ -20,6 +21,7 @@ export function Nav({ owner, superadmin = false }: { owner: boolean; superadmin?
   const items: [string, string, string, keyof typeof ic][] = [
     ['/', 'Inicio', 'Inicio', 'inicio'],
     owner ? ['/horas', 'Bolsa de horas', 'Bolsa', 'horas'] : ['/horas', 'Horas y bolsa de horas', 'Horas', 'horas'],
+    ['/horario', 'Horario', 'Horario', 'horario'],
     ['/turnos', 'Turnos y calendario', 'Turnos', 'turnos'],
     ...(owner ? [['/plantilla', 'Plantilla', 'Plantilla', 'plantilla'] as [string, string, string, keyof typeof ic]] : []),
     ['/reponer', 'Reponer', 'Reponer', 'reponer'],

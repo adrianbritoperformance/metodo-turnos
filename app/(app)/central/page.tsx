@@ -23,7 +23,7 @@ export default async function Central() {
   return (
     <>
       <h1>Central</h1>
-      <p className="muted" style={{ margin: 0 }}>Solo tú ves esta pantalla. Aquí decides qué vista tiene cada cuenta: <b>Admin</b> (dueños: Gestión, cuadrante, nóminas) o <b>Equipo</b>.</p>
+      <p className="muted" style={{ margin: 0 }}>Solo tú ves esta pantalla. Aquí decides qué vista tiene cada cuenta: <b>Admin</b> (dueños: Gestión, horario, bolsa de horas) o <b>Equipo</b>.</p>
       <datalist id="jobs">{JOBS.map((j) => <option key={j} value={j} />)}</datalist>
 
       <div className="cols wide-left">
@@ -68,7 +68,7 @@ export default async function Central() {
           <div className="card">
             <div className="eyebrow">Cómo funciona</div>
             <div className="small">
-              <b>Vista admin:</b> Inicio con avisos del equipo, Gestión, poner turnos, ausencias, mensajes y tareas, cerrar nóminas.<br />
+              <b>Vista admin:</b> Inicio con avisos del equipo, Gestión, poner turnos, ausencias, mensajes y tareas, bolsa de horas de cada persona.<br />
               <b>Vista equipo:</b> fichar, ver sus turnos y su bolsa de horas, reponer.<br />
               <b>Puesto:</b> solo una etiqueta (Barista, Cocina…), no cambia lo que ve.<br />
               <b>De baja:</b> no puede fichar ni aparece en el cuadrante; su historial se conserva.

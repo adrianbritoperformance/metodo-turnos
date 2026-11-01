@@ -8,11 +8,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function Perfil() {
   const { sb, profile } = await requireProfile();
-  const { data } = await sb.from('profiles').select('id, color, active, job_title').order('full_name');
-  const list = ((data ?? []) as { id: string; color: string | null; active: boolean; job_title: string | null }[]).filter((p) => p.active);
+  const { data } = await sb.from('profiles').select('id, full_name, color, active, job_title').order('full_name');
+  const list = ((data ?? []) as { id: string; full_name: string; color: string | null; active: boolean; job_title: string | null }[]).filter((p) => p.active);
   const idx = Math.max(0, list.findIndex((p) => p.id === profile.id));
   const mine = colorOf(list[idx]?.color, idx);
-  const taken = new Set(list.filter((p) => p.id !== profile.id && p.color).map((p) => p.color!.toUpperCase()));
+  const takenBy = new Map(list.filter((p) => p.id !== profile.id && p.color).map((p) => [p.color!.toUpperCase(), p.full_name.split(' ')[0]]));
 
   return (
     <div className="narrow" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -25,26 +25,24 @@ export default async function Perfil() {
         </div>
       </div>
 
-      {profile.role !== 'owner' && <>
-      <h2>Tu color en el calendario</h2>
+      <h2>Tu color en el horario</h2>
       <form action={setMyColor} className="card" style={{ gap: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
           {PALETTE.map((c) => {
-            const used = taken.has(c.hex.toUpperCase());
+            const owner = takenBy.get(c.hex.toUpperCase());
             return (
-              <label key={c.hex} style={{ alignItems: 'center', gap: 4, color: 'var(--tinta)', fontWeight: 400, cursor: 'pointer' }}>
-                <input type="radio" name="color" value={c.hex} defaultChecked={c.hex.toUpperCase() === mine.toUpperCase()}
+              <label key={c.hex} style={{ alignItems: 'center', gap: 4, color: 'var(--tinta)', fontWeight: 400, cursor: owner ? 'not-allowed' : 'pointer', opacity: owner ? 0.35 : 1 }}>
+                <input type="radio" name="color" value={c.hex} defaultChecked={c.hex.toUpperCase() === mine.toUpperCase()} disabled={!!owner}
                   style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }} />
                 <span className="swatch" style={{ background: c.hex }} />
-                <span className="small">{c.name}{used ? ' ·' : ''}</span>
+                <span className="small" style={{ textAlign: 'center' }}>{owner ?? c.name}</span>
               </label>
             );
           })}
         </div>
-        <div className="small muted">Los marcados con · ya los usa alguna compañera. Mejor elegir uno libre para distinguiros.</div>
+        <div className="small muted">Cada persona tiene un color distinto. Los que salen apagados ya los usa otra persona (pone su nombre).</div>
         <button className="btn">Guardar color</button>
       </form>
-      </>}
 
       <details className="card">
         <summary className="btn ghost">Cambiar contraseña</summary>

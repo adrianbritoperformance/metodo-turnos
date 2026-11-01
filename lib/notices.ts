@@ -12,3 +12,14 @@ export async function loadNotices(sb: SB, day: string) {
   const { data } = await sb.from('notices').select('*').eq('day', day).order('kind', { ascending: false }).order('created_at');
   return (data ?? []) as Notice[];
 }
+
+export type RuleTask = {
+  rule_id: string; body: string; part: 'any' | 'morning' | 'afternoon'; jobs: string[];
+  assignees: string[]; done_by: string | null; done_at: string | null;
+};
+
+/** Tareas que se repiten de un día (la base de datos decide a quién le salen). */
+export async function loadRuleTasks(sb: SB, day: string) {
+  const { data } = await sb.rpc('tasks_for_day', { p_day: day });
+  return (data ?? []) as RuleTask[];
+}

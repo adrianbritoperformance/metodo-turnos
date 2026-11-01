@@ -2,11 +2,10 @@ import Link from 'next/link';
 import { headers } from 'next/headers';
 import QRCode from 'qrcode';
 import { requireOwner } from '@/lib/supabase';
-import { addDays, fmtDay, fmtHours, fmtMinutes, fmtRange, fmtTime, madridMidnight, monthOnly, payMonthOf, payPeriod, shiftMonth, ymd } from '@/lib/time';
-import { getPayStartDay, type Closing } from '@/lib/period';
-import { ClosePeriodForm, VoidPunchForm } from '../Forms';
-import { ABSENCE, loadAbsences, type AbsenceKind } from '@/lib/absences';
-import { reviewCorrection, rotateQr, saveTemplates, setPayStartDay, shiftFromPunches } from '../actions';
+import { fmtDay, fmtTime, monthName, shiftMonth, shortTime, ymd } from '@/lib/time';
+import { JOBS } from '@/lib/jobs';
+import { BlockForm, TaskRuleForm, VoidPunchForm } from '../Forms';
+import { deleteBlock, deleteTaskRule, reviewCorrection, rotateQr, saveTemplates, shiftFromPunches } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,64 +14,39 @@ type Corr = {
   profiles: { full_name: string } | null; shifts: { starts_at: string; ends_at: string } | null;
 };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
-  const { m } = await searchParams;
+export default async function Admin() {
   const { sb } = await requireOwner();
-  const startDay = await getPayStartDay(sb);
-  const month = m && /^\d{4}-\d{2}$/.test(m) ? m : payMonthOf(ymd(), startDay);
-  const { start, end } = payPeriod(month, startDay);
+  const month = ymd().slice(0, 7);
 
-  const [{ data: corr }, { data: people }, { data: codes }, { data: tpls }, { data: closings }, { data: orphans }] = await Promise.all([
+  const [{ data: corr }, { data: codes }, { data: tpls }, { data: orphans }, { data: blk }, { data: rules }, { data: prf }] = await Promise.all([
     sb.from('corrections').select('id, kind, requested_at, reason, profiles:user_id(full_name), shifts(starts_at, ends_at)')
       .eq('status', 'pending').order('created_at'),
-    sb.rpc('get_contracts'),
     sb.rpc('get_admin_codes'),
     sb.from('shift_templates').select('id, name, start_time, end_time, weekdays').order('sort'),
-    sb.from('pay_closings').select('*').lte('period_month', `${month}-01`).order('period_month', { ascending: false }),
     sb.from('punches').select('id, user_id, kind, at, profiles:user_id(full_name)').is('shift_id', null).is('voided_at', null)
       .gte('at', new Date(Date.now() - 62 * 86400e3).toISOString()).order('at'),
+    sb.from('day_blocks').select('id, weekdays, start_time, end_time').order('start_time'),
+    sb.from('task_rules').select('id, body, weekdays, user_ids, jobs, part').order('created_at'),
+    sb.from('profiles').select('id, full_name, active, job_title').order('full_name'),
   ]);
   const templates = (tpls ?? []) as { id: string; name: string; start_time: string; end_time: string; weekdays: number[] }[];
+  const blocks = (blk ?? []) as { id: string; weekdays: number[]; start_time: string; end_time: string }[];
+  const taskRules = (rules ?? []) as { id: string; body: string; weekdays: number[]; user_ids: string[]; jobs: string[]; part: string }[];
+  const ppl = ((prf ?? []) as { id: string; full_name: string; active: boolean; job_title: string | null }[]).filter((p) => p.active);
+  const nameOf = new Map(ppl.map((p) => [p.id, p.full_name.split(' ')[0]]));
+  const jobs = [...new Set([...JOBS, ...ppl.map((p) => p.job_title).filter((j): j is string => !!j)])]
+    .filter((j) => !/due|admin/i.test(j));
   const DN = ['', 'L', 'M', 'X', 'J', 'V', 'S', 'D'];
   const daysLabel = (w: number[]) => {
     const s = [...w].sort();
     const run = s.every((v, i) => i === 0 || v === s[i - 1] + 1);
     return s.length === 7 ? 'todos los días' : run && s.length > 2 ? `${DN[s[0]]}–${DN[s[s.length - 1]]}` : s.map((v) => DN[v]).join(', ');
   };
+  const PART: Record<string, string> = { any: '', morning: ' · por la mañana', afternoon: ' · por la tarde' };
+  // Franjas agrupadas por día de la semana, para ver el horario de un vistazo
+  const WD = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
   const pending = (corr ?? []) as unknown as Corr[];
-  // Nóminas y bolsa: solo trabajadoras (los admins no fichan ni tienen horas).
-  const team = ((people ?? []) as { user_id: string; full_name: string; weekly_hours: number; role: string; active: boolean; opening_minutes: number; opening_note: string | null }[])
-    .filter((p) => p.role === 'worker')
-    .map((p) => ({ ...p, id: p.user_id, weekly_hours: Number(p.weekly_hours) }));
-  const allClosings = (closings ?? []) as Closing[];
-
-  // Saldo del periodo de cada persona (calculado en la base de datos)
-  const balances = await Promise.all(team.map((p) => sb.rpc('period_balance', { p_user: p.id, p_month: `${month}-01` })));
-  const rows = team.map((p, i) => {
-    const b = (balances[i].data as { worked_minutes: number; contract_minutes: number; balance_minutes: number }[] | null)?.[0]
-      ?? { worked_minutes: 0, contract_minutes: 0, balance_minutes: 0 };
-    const mine = allClosings.filter((c) => c.user_id === p.id);
-    const closing = mine.find((c) => c.period_month.slice(0, 7) === month) ?? null;
-    const prev = mine.find((c) => c.period_month.slice(0, 7) < month);
-    const carriedIn = closing ? closing.carried_in : prev ? prev.carried_out : p.opening_minutes;
-    return { p, b, closing, carriedIn, total: carriedIn + b.balance_minutes };
-  });
-  const finished = madridMidnight(addDays(end, 1)).getTime() <= Date.now();
-
-  // Días de ausencia dentro del periodo, por persona y tipo (solo informativo)
-  const periodAbs = await loadAbsences(sb, start, end);
-  const absDays = (userId: string) => {
-    const out: Partial<Record<AbsenceKind, number>> = {};
-    for (const a of periodAbs.filter((x) => x.user_id === userId)) {
-      const lo = a.start_date < start ? start : a.start_date;
-      const hi = a.end_date > end ? end : a.end_date;
-      let n = 0;
-      for (let d = lo; d <= hi; d = addDays(d, 1)) n++;
-      out[a.kind] = (out[a.kind] ?? 0) + n;
-    }
-    return (Object.keys(out) as AbsenceKind[]).map((k) => `${out[k]} ${out[k] === 1 ? 'día' : 'días'} de ${ABSENCE[k].label.toLowerCase()}`).join(' · ');
-  };
 
   // Fichajes sin turno, agrupados por persona y día
   type Orphan = { id: string; user_id: string; kind: 'in' | 'out'; at: string; profiles: { full_name: string } | null };
@@ -137,68 +111,78 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         </>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, gap: 8 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Nómina de {monthOnly(month)}</h2>
-          <div className="small muted">{fmtRange(start, end)}{finished ? '' : ' · en curso'}</div>
+      <h2>Horas trabajadas</h2>
+      <div className="card" style={{ gap: 8 }}>
+        <div className="small">El saldo de cada persona, semana a semana, está en <Link href="/horas">Bolsa de horas</Link>.</div>
+        <div className="btn-row">
+          <a className="btn soft sm" href={`/admin/export?m=${month}`}>Excel de {monthName(month).toLowerCase()}</a>
+          <a className="btn ghost sm" href={`/admin/export?m=${shiftMonth(month, -1)}`}>Excel de {monthName(shiftMonth(month, -1)).toLowerCase()}</a>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Link className="btn ghost sm" href={`/admin?m=${shiftMonth(month, -1)}`} aria-label="Nómina anterior">‹</Link>
-          <Link className="btn ghost sm" href={`/admin?m=${shiftMonth(month, 1)}`} aria-label="Nómina siguiente">›</Link>
-        </div>
+        <div className="small muted">Herramienta de organización interna del local. No sustituye al registro de jornada oficial.</div>
       </div>
-      <div className="list">
-        {rows.map(({ p, b, closing, carriedIn, total }) => (
-          <details key={p.id} className="row" style={{ display: 'block' }}>
-            <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <div>
-                <div className="t">{p.full_name}{!p.active ? ' (baja)' : ''}</div>
-                <div className="muted small">
-                  {p.weekly_hours} h/sem · {fmtHours(b.worked_minutes)} de {fmtHours(b.contract_minutes)}
-                </div>
-                {absDays(p.id) && <div className="small" style={{ color: '#1E4E79' }}>{absDays(p.id)}</div>}
-                {closing
-                  ? <span className={`pill ${closing.worker_status === 'agree' ? 'ok' : closing.worker_status === 'disagree' ? 'out' : 'low'}`} style={{ marginTop: 4 }}>
-                      {closing.worker_status === 'agree' ? 'Cerrada · conforme' : closing.worker_status === 'disagree' ? 'Cerrada · NO conforme' : 'Cerrada · esperando respuesta'}
-                    </span>
-                  : finished ? <span className="pill low" style={{ marginTop: 4 }}>Sin cerrar</span> : null}
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="num" style={{ color: (closing ? closing.carried_out : total) < 0 ? 'var(--terracota)' : undefined }}>
-                  {fmtMinutes(closing ? closing.carried_out : total)}
-                </div>
-                <div className="small muted">{closing ? 'queda' : 'acumulado'}</div>
-              </div>
-            </summary>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-              <div className="card" style={{ background: 'var(--crema)' }}>
-                <div className="small">Venía de antes: <b>{fmtMinutes(carriedIn)}</b> · Este periodo: <b>{fmtMinutes(closing ? closing.balance_minutes : b.balance_minutes)}</b></div>
-                {closing && <div className="small">Pagadas: <b>{fmtHours(closing.paid_minutes)}</b> · Queda: <b>{fmtMinutes(closing.carried_out)}</b></div>}
-                {closing?.worker_comment && <div className="small">Comentario de {p.full_name.split(' ')[0]}: “{closing.worker_comment}”</div>}
-                {!finished && <div className="small muted">El periodo aún no ha terminado: si lo cierras ahora, se cuenta con los turnos puestos hasta el {Number(end.slice(8))}.</div>}
-                <ClosePeriodForm userId={p.id} month={month} total={fmtMinutes(total)} paid={closing?.paid_minutes} note={closing?.note} />
+      <h2>Tareas que se repiten</h2>
+      <div className="small muted" style={{ marginTop: -6 }}>Salen solas los días marcados a quien tenga ese puesto (o a esa persona) y trabaje ese día. Las tareas de un solo día se ponen en Turnos y calendario.</div>
+      {taskRules.length > 0 && (
+        <div className="list">
+          {taskRules.map((r) => (
+            <div key={r.id} className="row" style={{ alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="t" style={{ whiteSpace: 'pre-line' }}>{r.body}</div>
+                <div className="small muted">
+                  {daysLabel(r.weekdays)}{PART[r.part] ?? ''} · para {[...r.jobs, ...r.user_ids.map((u) => nameOf.get(u) ?? '—')].join(', ')}
+                </div>
               </div>
+              <form action={deleteTaskRule}>
+                <input type="hidden" name="id" value={r.id} />
+                <button className="small" style={{ background: 'none', border: 0, color: 'var(--terracota)', textDecoration: 'underline', cursor: 'pointer', minHeight: 36 }}>Borrar</button>
+              </form>
             </div>
-          </details>
-        ))}
-      </div>
-      <a className="btn soft" href={`/admin/export?m=${month}`}>Descargar registro de la nómina de {monthOnly(month)} (Excel)</a>
+          ))}
+        </div>
+      )}
+      <details className="card">
+        <summary className="btn ghost">+ Nueva tarea que se repite</summary>
+        <div style={{ marginTop: 12 }}>
+          <TaskRuleForm jobs={jobs} people={ppl.map((p) => ({ id: p.id, full_name: p.full_name }))} />
+        </div>
+      </details>
 
         </div>
         <div className="col">
-      <h2>Día de corte de la nómina</h2>
-      <form action={setPayStartDay} className="card" style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
-        <label style={{ flex: 1 }}>La nómina empieza el día
-          <input name="day" type="number" min={1} max={28} defaultValue={startDay} inputMode="numeric" />
-        </label>
-        <button className="btn sm">Guardar</button>
-      </form>
-      <div className="small muted" style={{ marginTop: -6 }}>Con 26, la nómina de noviembre va del 26 de octubre al 25 de noviembre. Con 1, el mes natural.</div>
+      <h2>Franjas del horario</h2>
+      <div className="small muted" style={{ marginTop: -6 }}>Son las columnas de la tabla de Horario. Si cambiáis el horario del local (abrir el lunes por la mañana, cerrar el sábado por la tarde…), se cambia aquí. Los turnos ya puestos no se tocan.</div>
+      <div className="list">
+        {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+          const list = blocks.filter((b) => b.weekdays.includes(d));
+          return (
+            <div key={d} className="row">
+              <span className="t">{WD[d]}</span>
+              <span className="small" style={{ textAlign: 'right' }}>{list.length ? list.map((b) => `${shortTime(b.start_time)}–${shortTime(b.end_time)}`).join(' · ') : 'Cerrado'}</span>
+            </div>
+          );
+        })}
+      </div>
+      <details className="card">
+        <summary className="btn ghost">Cambiar franjas</summary>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {blocks.map((b) => (
+            <div key={b.id} style={{ borderBottom: '1px solid var(--linea)', paddingBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <BlockForm block={{ id: b.id, start: b.start_time.slice(0, 5), end: b.end_time.slice(0, 5), weekdays: b.weekdays }} />
+              <form action={deleteBlock}>
+                <input type="hidden" name="id" value={b.id} />
+                <button className="btn danger sm" style={{ width: '100%' }}>Quitar franja {shortTime(b.start_time)}–{shortTime(b.end_time)}</button>
+              </form>
+            </div>
+          ))}
+          <div className="eyebrow">Nueva franja</div>
+          <BlockForm />
+        </div>
+      </details>
 
-      <h2>Horario de los turnos</h2>
+      <h2>Mañana y tarde de Plantilla</h2>
       <form action={saveTemplates} className="card" style={{ gap: 12 }}>
-        <div className="small muted">Son las horas que se ponen al tocar Mañana o Tarde en el cuadrante. Cambiarlas no modifica los turnos ya puestos.</div>
+        <div className="small muted">Las horas que se ponen al tocar Mañana o Tarde en Plantilla y Turnos (la forma antigua de hacer el horario). Cambiarlas no modifica los turnos ya puestos.</div>
         {templates.map((t) => (
           <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <input type="hidden" name="id" value={t.id} />

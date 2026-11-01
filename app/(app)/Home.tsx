@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { requireProfile } from '@/lib/supabase';
-import { addDays, dayRange, fmtHours, fmtTime, payMonthOf, shiftMonth, TZ, ymd } from '@/lib/time';
+import { addDays, dayRange, fmtHours, fmtTime, TZ, ymd } from '@/lib/time';
 import { ABSENCE, absentOn, loadAbsences } from '@/lib/absences';
-import { loadNotices } from '@/lib/notices';
-import { getPayStartDay } from '@/lib/period';
+import { loadNotices, loadRuleTasks } from '@/lib/notices';
 import { colorOf } from '@/lib/colors';
 import { Scanner } from './Scanner';
 import { VoidRecent } from './VoidRecent';
-import { NoticeList } from './NoticeList';
+import { NoticeList, RuleTaskList } from './NoticeList';
+import { MessageForm } from './Forms';
 import { DaySlots } from './turnos/DaySlots';
 
 const dayTitle = new Intl.DateTimeFormat('es-ES', { timeZone: TZ, weekday: 'long', day: 'numeric' });
@@ -26,7 +26,7 @@ export async function Home({ autoCode }: { autoCode?: string }) {
   const { from: weekFrom } = dayRange(addDays(today, 1));
   const { to: weekTo } = dayRange(addDays(today, 7));
 
-  const [{ data: teamToday }, { data: last }, { data: upcoming }, absences, notices, { data: profs }] = await Promise.all([
+  const [{ data: teamToday }, { data: last }, { data: upcoming }, absences, notices, { data: profs }, ruleTasks] = await Promise.all([
     sb.from('shifts').select('id, user_id, starts_at, ends_at, label, note, changed_at, profiles(full_name)')
       .gte('starts_at', from).lt('starts_at', to).order('starts_at'),
     sb.from('punches').select('id, kind, at, created_at').eq('user_id', profile.id).is('voided_at', null)
@@ -36,6 +36,7 @@ export async function Home({ autoCode }: { autoCode?: string }) {
     loadAbsences(sb, today, addDays(today, 7)),
     loadNotices(sb, today),
     sb.from('profiles').select('id, full_name, color, active, role').order('full_name'),
+    loadRuleTasks(sb, today),
   ]);
 
   const team = (teamToday ?? []) as unknown as Shift[];
@@ -45,10 +46,15 @@ export async function Home({ autoCode }: { autoCode?: string }) {
   const awayToday = absentOn(myAbs, today)[0];
   const allProfiles = (profs ?? []) as { id: string; full_name: string; color: string | null; active: boolean; role: string }[];
   const nameById = new Map(allProfiles.map((p) => [p.id, p.full_name]));
-  const colorById = new Map(allProfiles.filter((p) => p.active && p.role === 'worker').map((p, i) => [p.id, colorOf(p.color, i)]));
+  const colorById = new Map(allProfiles.filter((p) => p.active).map((p, i) => [p.id, colorOf(p.color, i)]));
+  const ownerIds = new Set(allProfiles.filter((p) => p.role === 'owner').map((p) => p.id));
   const myNotices = notices.filter((n) => n.user_ids.length === 0 || n.user_ids.includes(profile.id));
-  // Pendiente = mensajes de hoy + tareas sin hacer + tareas del turno
-  const pendingCount = myNotices.filter((n) => n.kind === 'mensaje' || !n.done_at).length + shifts.filter((s) => s.note).length;
+  const myRules = ruleTasks.filter((t) => t.assignees.includes(profile.id));
+  // Pendiente = mensajes de hoy + tareas sin hacer + tareas del turno + tareas de cada semana sin hacer
+  const pendingCount = myNotices.filter((n) => n.kind === 'mensaje' || !n.done_at).length + shifts.filter((s) => s.note).length
+    + myRules.filter((t) => !t.done_at).length;
+  const coworkers = allProfiles.filter((p) => p.active && p.id !== profile.id)
+    .sort((a, b) => Number(a.role === 'owner') - Number(b.role === 'owner') || a.full_name.localeCompare(b.full_name, 'es'));
 
   const nextKind: 'in' | 'out' = last?.[0]?.kind === 'in' ? 'out' : 'in';
   const recentlyChanged = (s: Shift) => s.changed_at && Date.now() - new Date(s.changed_at).getTime() < 48 * 3600e3;
@@ -80,7 +86,7 @@ export async function Home({ autoCode }: { autoCode?: string }) {
         <h1>Hola, {firstName}</h1>
         <div className="cols">
           <div className="col">
-            <OwnerToday sb={sb} today={today} absences={absentOn(absences, today)} notices={notices} nameById={nameById} />
+            <OwnerToday sb={sb} today={today} absences={absentOn(absences, today)} notices={notices} nameById={nameById} ruleTasks={ruleTasks} ownerIds={ownerIds} />
           </div>
           <div className="col">
             <h2>Quién está hoy</h2>
@@ -152,7 +158,14 @@ export async function Home({ autoCode }: { autoCode?: string }) {
               <div className="muted">No tienes mensajes ni tareas pendientes.</div>
             </div>
           )}
-          <NoticeList notices={myNotices} nameById={nameById} />
+          <RuleTaskList tasks={myRules} day={today} nameById={nameById} />
+          <NoticeList notices={myNotices} nameById={nameById} me={profile.id} />
+          <details className="card">
+            <summary className="btn ghost">+ Dejar un mensaje a una compañera</summary>
+            <div style={{ marginTop: 12 }}>
+              <MessageForm people={coworkers.map((p) => ({ id: p.id, full_name: p.full_name }))} day={today} />
+            </div>
+          </details>
           {shifts.filter((s) => s.note).map((s) => (
             <div key={s.id + 'n'} className="card">
               <span className="pill low" style={{ alignSelf: 'flex-start' }}>Tarea del turno</span>
@@ -198,40 +211,33 @@ export async function Home({ autoCode }: { autoCode?: string }) {
 type SB = Awaited<ReturnType<typeof requireProfile>>['sb'];
 
 /** Bloque solo para admins: quién no ha fichado, cosas por revisar y tareas de hoy. */
-async function OwnerToday({ sb, today, absences, notices, nameById }: {
+async function OwnerToday({ sb, today, absences, notices, nameById, ruleTasks, ownerIds }: {
   sb: SB; today: string; absences: { user_id: string }[];
   notices: Awaited<ReturnType<typeof loadNotices>>; nameById: Map<string, string>;
+  ruleTasks: Awaited<ReturnType<typeof loadRuleTasks>>; ownerIds: Set<string>;
 }) {
   const { from, to } = dayRange(today);
-  const startDay = await getPayStartDay(sb);
-  const prevMonth = shiftMonth(payMonthOf(today, startDay), -1);
 
-  const [{ data: bal }, corr, orphans, { data: closings }, { data: people }] = await Promise.all([
+  const [{ data: bal }, corr, orphans] = await Promise.all([
     sb.from('shift_balance').select('shift_id, user_id, starts_at, ends_at, real_in').gte('starts_at', from).lt('starts_at', to),
     sb.from('corrections').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     sb.from('punches').select('id', { count: 'exact', head: true }).is('shift_id', null).is('voided_at', null)
       .gte('at', new Date(Date.now() - 62 * 86400e3).toISOString()),
-    sb.from('pay_closings').select('user_id, worker_status').eq('period_month', `${prevMonth}-01`),
-    sb.from('profiles').select('id').eq('active', true).eq('role', 'worker'),
   ]);
 
   const now = Date.now();
   const absentIds = new Set(absences.map((a) => a.user_id));
   const missing = ((bal ?? []) as { shift_id: string; user_id: string; starts_at: string; ends_at: string; real_in: string | null }[])
-    .filter((b) => !b.real_in && new Date(b.starts_at).getTime() <= now && !absentIds.has(b.user_id))
+    .filter((b) => !b.real_in && new Date(b.starts_at).getTime() <= now && !absentIds.has(b.user_id) && !ownerIds.has(b.user_id))
     .map((b) => ({ ...b, late: Math.floor((now - new Date(b.starts_at).getTime()) / 60000), ended: new Date(b.ends_at).getTime() < now }));
 
-  const closed = (closings ?? []) as { user_id: string; worker_status: string }[];
-  const unclosed = Math.max(0, (people ?? []).length - closed.length);
-  const disagree = closed.filter((c) => c.worker_status === 'disagree').length;
   const review = [
     { n: corr.count ?? 0, label: 'correcciones de fichaje pendientes', href: '/admin' },
     { n: orphans.count ?? 0, label: 'fichajes sin turno', href: '/admin' },
-    { n: disagree, label: 'nóminas marcadas como “no conforme”', href: `/admin?m=${prevMonth}` },
-    { n: unclosed, label: 'nóminas del mes pasado sin cerrar', href: `/admin?m=${prevMonth}` },
   ].filter((r) => r.n > 0);
 
   const tasks = notices.filter((n) => n.kind === 'tarea');
+  const messages = notices.filter((n) => n.kind === 'mensaje');
 
   return (
     <>
@@ -264,10 +270,21 @@ async function OwnerToday({ sb, today, absences, notices, nameById }: {
       )}
 
       <h2>Tareas de hoy</h2>
-      {tasks.length > 0 && (
-        <div className="small muted" style={{ marginTop: -6 }}>{tasks.filter((t) => t.done_at).length} de {tasks.length} hechas</div>
+      {tasks.length + ruleTasks.length > 0 && (
+        <div className="small muted" style={{ marginTop: -6 }}>
+          {tasks.filter((t) => t.done_at).length + ruleTasks.filter((t) => t.done_at).length} de {tasks.length + ruleTasks.length} hechas
+        </div>
       )}
-      <NoticeList notices={tasks} nameById={nameById} owner empty="No hay tareas para hoy. Se ponen desde Turnos y calendario." />
+      <RuleTaskList tasks={ruleTasks} day={today} nameById={nameById} owner />
+      <NoticeList notices={tasks} nameById={nameById} owner
+        empty={ruleTasks.length ? undefined : 'No hay tareas para hoy. Las de un día se ponen en Turnos y calendario; las que se repiten, en Gestión.'} />
+
+      {messages.length > 0 && (
+        <>
+          <h2>Mensajes de hoy</h2>
+          <NoticeList notices={messages} nameById={nameById} owner />
+        </>
+      )}
     </>
   );
 }

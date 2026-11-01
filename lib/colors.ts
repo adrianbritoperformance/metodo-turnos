@@ -12,7 +12,7 @@ export const PALETTE = [
   { hex: '#34495E', name: 'Pizarra' },
 ];
 
-/** Color de una persona: el que eligió o, si no, uno por su posición en el equipo. */
-export function colorOf(color: string | null | undefined, index: number) {
-  return color ?? PALETTE[index % PALETTE.length].hex;
+/** Color de una persona: el suyo (la base de datos ya los reparte sin repetir) o gris si no tiene. */
+export function colorOf(color: string | null | undefined, _index?: number) {
+  return color ?? '#8A7B70';
 }

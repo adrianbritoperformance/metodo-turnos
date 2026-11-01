@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useTransition, useState } from 'react';
-import { addAbsence, addNotice, addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveShift, setOpening, setStock, voidPunchForm } from './actions';
+import { addAbsence, addNotice, addStock, clearWeek, closePeriod, requestCorrection, respondClosing, saveBlock, saveShift, saveTaskRule, sendMessage, setOpening, setStock, voidPunchForm } from './actions';
 
 type State = { error?: string; ok?: string } | undefined;
 
@@ -67,11 +67,11 @@ export function ShiftForm({ people, d, submit = 'Guardar turno' }: {
   );
 }
 
-const LOOKS = [
-  { label: 'Hay', cls: 'ok' },
-  { label: 'Queda poco', cls: 'low' },
-  { label: 'Falta', cls: 'out' },
-];
+const LOOKS: Record<number, { label: string; cls: string }> = {
+  0: { label: 'Hay', cls: 'ok' },
+  1: { label: 'Pedir', cls: 'out' },
+  2: { label: 'Pedir', cls: 'out' },
+};
 
 export function StockRow({ id, name, place, status, updatedBy }: {
   id: string; name: string; place: string | null; status: number; updatedBy?: string;
@@ -85,7 +85,7 @@ export function StockRow({ id, name, place, status, updatedBy }: {
       className="row"
       style={{ width: '100%', background: 'transparent', border: 0, borderBottom: '1px solid var(--linea)', textAlign: 'left', cursor: 'pointer', minHeight: 60 }}
       onClick={() => {
-        const n = (s + 1) % 3;
+        const n = s === 0 ? 2 : 0;
         setS(n);
         start(() => setStock(id, n));
       }}
@@ -294,6 +294,109 @@ export function NoticeForm({ people, day }: { people: { id: string; full_name: s
       <div className="small" style={{ color: 'var(--suave)' }}>Lo verá: <b>{who}</b></div>
       <Msg s={state} />
       <button className="btn" disabled={pending}>Guardar</button>
+    </form>
+  );
+}
+
+const WDAYS: [number, string][] = [[1, 'L'], [2, 'M'], [3, 'X'], [4, 'J'], [5, 'V'], [6, 'S'], [7, 'D']];
+
+function WeekdayPick({ defaults = [] }: { defaults?: number[] }) {
+  return (
+    <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 6 }}>Días</legend>
+      <div className="wd-pick">
+        {WDAYS.map(([n, l]) => (
+          <label key={n}>
+            <input type="checkbox" name="wd" value={n} defaultChecked={defaults.includes(n)} />
+            <span>{l}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Crear o cambiar una franja del horario (Gestión). */
+export function BlockForm({ block }: { block?: { id: string; start: string; end: string; weekdays: number[] } }) {
+  const [state, action, pending] = useActionState<State, FormData>(saveBlock, undefined);
+  return (
+    <form action={action} className="stack">
+      {block && <input type="hidden" name="id" value={block.id} />}
+      <div className="grid2">
+        <label>Desde<input type="time" name="start" defaultValue={block?.start} required /></label>
+        <label>Hasta<input type="time" name="end" defaultValue={block?.end} required /></label>
+      </div>
+      <WeekdayPick defaults={block?.weekdays} />
+      <Msg s={state} />
+      <button className={block ? 'btn ghost sm' : 'btn'} disabled={pending}>{block ? 'Guardar' : 'Añadir franja'}</button>
+    </form>
+  );
+}
+
+/** Tarea que se repite: por puesto y/o por persona, ciertos días. */
+export function TaskRuleForm({ jobs, people }: { jobs: string[]; people: { id: string; full_name: string }[] }) {
+  const [state, action, pending] = useActionState<State, FormData>(saveTaskRule, undefined);
+  const box = { flexDirection: 'row' as const, alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 };
+  const cb = { minHeight: 0, width: 20, height: 20 };
+  return (
+    <form action={action} className="stack">
+      <label>Tarea<textarea name="body" required placeholder="Por ejemplo: limpiar el fregadero a fondo" /></label>
+      <WeekdayPick />
+      <div className="small muted" style={{ marginTop: -6 }}>Marca los 7 días para que salga todos los días.</div>
+      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 4 }}>Para el puesto</legend>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
+          {jobs.map((j) => (
+            <label key={j} style={box}><input type="checkbox" name="jobs" value={j} style={cb} />{j}</label>
+          ))}
+        </div>
+      </fieldset>
+      <details>
+        <summary className="small" style={{ textDecoration: 'underline', cursor: 'pointer', padding: '6px 0' }}>O para personas concretas</summary>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px', marginTop: 6 }}>
+          {people.map((p) => (
+            <label key={p.id} style={box}><input type="checkbox" name="user_ids" value={p.id} style={cb} />{p.full_name}</label>
+          ))}
+        </div>
+      </details>
+      <label>Turno
+        <select name="part" defaultValue="any">
+          <option value="any">A quien trabaje ese día (mañana o tarde)</option>
+          <option value="morning">Solo a quien esté por la mañana</option>
+          <option value="afternoon">Solo a quien esté por la tarde</option>
+        </select>
+      </label>
+      <Msg s={state} />
+      <button className="btn" disabled={pending}>Guardar tarea</button>
+    </form>
+  );
+}
+
+/** Mensaje de una trabajadora a una o varias compañeras. */
+export function MessageForm({ people, day }: { people: { id: string; full_name: string }[]; day: string }) {
+  const [state, action, pending] = useActionState<State, FormData>(sendMessage, undefined);
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const box = { flexDirection: 'row' as const, alignItems: 'center', gap: 8, fontWeight: 400, color: 'var(--tinta)', minHeight: 40 };
+  return (
+    <form action={action} className="stack">
+      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend style={{ fontSize: 13, fontWeight: 700, color: '#6B4A2E', marginBottom: 4 }}>Para</legend>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 16px' }}>
+          {people.map((p) => (
+            <label key={p.id} style={box}>
+              <input type="checkbox" checked={picked.includes(p.id)} onChange={() => toggle(p.id)} style={{ minHeight: 0, width: 20, height: 20 }} />
+              {p.full_name}
+            </label>
+          ))}
+        </div>
+        {picked.map((id) => <input key={id} type="hidden" name="user_ids" value={id} />)}
+      </fieldset>
+      <label>Día<input type="date" name="day" defaultValue={day} required /></label>
+      <label>Mensaje<textarea name="body" required placeholder="Por ejemplo: ya he sacado el pan de mañana, no hace falta" /></label>
+      <div className="small muted">Lo verán las compañeras que marques y los admins.</div>
+      <Msg s={state} />
+      <button className="btn" disabled={pending}>Enviar</button>
     </form>
   );
 }
